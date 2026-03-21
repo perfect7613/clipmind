@@ -23,36 +23,31 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "File is required" }, { status: 400 });
     }
 
-    // Save to temp, then upload to Supabase Storage
-    const tmpDir = path.join(os.tmpdir(), `clipmind-upload-${Date.now()}`);
+    // Save to a persistent temp directory (not cleaned up — coordinator needs it)
+    const tmpDir = path.join(os.tmpdir(), "clipmind-videos");
     await fs.mkdir(tmpDir, { recursive: true });
-    const tmpPath = path.join(tmpDir, file.name);
+    const tmpPath = path.join(tmpDir, `${Date.now()}-${file.name}`);
     const buffer = Buffer.from(await file.arrayBuffer());
     await fs.writeFile(tmpPath, buffer);
 
-    const adminClient = createAdminClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
+    // Also upload to Supabase Storage for backup
+    try {
+      const adminClient = createAdminClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!
+      );
 
-    const filePath = `${user.id}/${Date.now()}-${file.name}`;
-    const { error: uploadError } = await adminClient.storage
-      .from(bucket)
-      .upload(filePath, buffer, { contentType: file.type });
-
-    if (uploadError) {
-      throw new Error(`Upload failed: ${uploadError.message}`);
+      const filePath = `${user.id}/${Date.now()}-${file.name}`;
+      await adminClient.storage
+        .from(bucket)
+        .upload(filePath, buffer, { contentType: file.type });
+    } catch {
+      // Storage upload is non-critical for local prototype
     }
 
-    const { data: urlData } = adminClient.storage
-      .from(bucket)
-      .getPublicUrl(filePath);
-
-    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
-
     return NextResponse.json({
-      url: urlData.publicUrl,
-      path: filePath,
+      url: tmpPath,
+      path: tmpPath,
       localPath: tmpPath,
     });
   } catch (error) {
