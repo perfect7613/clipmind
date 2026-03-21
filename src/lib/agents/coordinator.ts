@@ -153,7 +153,6 @@ export async function runPipeline(
           }
         } catch (err) {
           console.error(`[Pipeline] Animation failed for clip ${i + 1}, skipping:`, err);
-          // Graceful degradation
         }
       }
 

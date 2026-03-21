@@ -7,7 +7,13 @@ const nextConfig: NextConfig = {
     },
     proxyClientMaxBodySize: "500mb",
   },
-  serverExternalPackages: ["fluent-ffmpeg"],
+  serverExternalPackages: [
+    "fluent-ffmpeg",
+    "@remotion/bundler",
+    "@remotion/renderer",
+    "@remotion/media-utils",
+    "remotion",
+  ],
 };
 
 export default nextConfig;
