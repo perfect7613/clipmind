@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { db } from "@/lib/db";
 import { jobs, projects } from "@/lib/db/schema";
 import { runPipeline } from "@/lib/agents/coordinator";
+import { ensureUser } from "@/lib/ensure-user";
 import { eq } from "drizzle-orm";
 
 export async function POST(request: NextRequest) {
@@ -12,6 +13,8 @@ export async function POST(request: NextRequest) {
     if (authError || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
+    await ensureUser(user.id, user.email!);
 
     const body = await request.json();
     const { videoUrls, dnaProfileId, platform, clipCount, skipAnimations, skipBroll } = body;
