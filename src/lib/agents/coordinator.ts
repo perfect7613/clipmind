@@ -114,8 +114,9 @@ export async function runPipeline(
     }
 
     // Parse DNA for color/audio profiles
-    const colorProfile = extractDnaValue(dnaContent, "Profile:", "neutral") as any;
-    const audioStyle = extractDnaValue(dnaContent, "Style:", "youtube_standard") as any;
+    const colorProfile = extractDnaValue(dnaContent, "Profile:", "neutral").split(/[\s(]/)[0].toLowerCase() as any;
+    const audioStyle = extractDnaValue(dnaContent, "Style:", "youtube_standard").split(/[\s(]/)[0].toLowerCase() as any;
+    console.log(`[Pipeline] DNA color=${colorProfile}, audio=${audioStyle}`);
 
     // Process each clip through the full pipeline
     onProgress?.("rendering", 40);

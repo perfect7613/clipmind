@@ -19,7 +19,7 @@ import { getSpeedRampConfig, type SpeedRampConfig } from "./speed-ramp";
 
 export interface EffectsConfig {
   // Color
-  colorProfile: "warm" | "neutral" | "cool" | "cinematic" | "flat";
+  colorProfile: "warm" | "neutral" | "cool" | "cinematic" | "bw" | "vintage" | "neon" | "flat";
   vignette: boolean;
   vignetteIntensity: number;       // 0-1
   filmGrain: boolean;
@@ -65,6 +65,9 @@ const COLOR_FILTERS: Record<string, string> = {
   neutral: "colorbalance=rs=0.02:gs=-0.01:bs=-0.02,curves=m='0/0 0.25/0.20 0.75/0.82 1/1',eq=brightness=0.02:contrast=1.05:saturation=1.05",
   cool: "colorbalance=rs=-0.03:gs=0.0:bs=0.04,curves=m='0/0 0.25/0.22 0.75/0.80 1/1',eq=brightness=0.01:contrast=1.06:saturation=1.02",
   cinematic: "colorbalance=rs=0.01:gs=-0.02:bs=-0.01,curves=m='0/0 0.15/0.08 0.30/0.22 0.70/0.78 0.85/0.92 1/1',eq=brightness=-0.01:contrast=1.12:saturation=0.95",
+  bw: "hue=s=0,curves=m='0/0 0.15/0.05 0.35/0.25 0.65/0.75 0.85/0.95 1/1',eq=brightness=-0.02:contrast=1.25",
+  vintage: "colorbalance=rs=0.05:gs=0.01:bs=-0.03,curves=m='0/0 0.20/0.15 0.80/0.85 1/1',eq=brightness=0.01:contrast=1.04:saturation=0.75",
+  neon: "colorbalance=rs=0.02:gs=-0.03:bs=0.02,curves=m='0/0 0.10/0.02 0.30/0.20 0.70/0.85 0.90/0.98 1/1',eq=brightness=-0.02:contrast=1.15:saturation=1.4",
   flat: "",
 };
 
@@ -141,11 +144,12 @@ export function buildVideoFilterChain(config: Partial<EffectsConfig> = {}): stri
 export function extractEffectsFromDna(dnaContent: string): Partial<EffectsConfig> {
   const config: Partial<EffectsConfig> = {};
 
-  // Color profile
+  // Color profile — match the first word after "Profile:" against known profiles
   const colorMatch = dnaContent.match(/(?:Profile|color_profile)[:\s]*(\w+)/i);
   if (colorMatch) {
     const profile = colorMatch[1].toLowerCase();
-    if (["warm", "neutral", "cool", "cinematic", "flat"].includes(profile)) {
+    const validProfiles = Object.keys(COLOR_FILTERS);
+    if (validProfiles.includes(profile)) {
       config.colorProfile = profile as EffectsConfig["colorProfile"];
     }
   }
