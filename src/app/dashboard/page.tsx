@@ -9,6 +9,13 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { createClient } from "@/lib/supabase/client";
+import { getAllPresets, type FilmmakerPreset } from "@/lib/presets/filmmaker-presets";
+
+const CATEGORY_COLORS: Record<string, string> = {
+  cinematic: "bg-red-900/30 border-red-700 text-red-300",
+  social: "bg-blue-900/30 border-blue-700 text-blue-300",
+  classic: "bg-amber-900/30 border-amber-700 text-amber-300",
+};
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -17,10 +24,13 @@ export default function DashboardPage() {
   const [clipCount, setClipCount] = useState(5);
   const [dnaProfiles, setDnaProfiles] = useState<any[]>([]);
   const [selectedDna, setSelectedDna] = useState("");
+  const [selectedPreset, setSelectedPreset] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
   const [progress, setProgress] = useState({ step: "", pct: 0, status: "" });
   const [error, setError] = useState("");
+
+  const presets = getAllPresets();
 
   useEffect(() => {
     loadDnaProfiles();
@@ -75,6 +85,7 @@ export default function DashboardPage() {
           dnaProfileId: selectedDna,
           platform,
           clipCount,
+          ...(selectedPreset ? { presetId: selectedPreset } : {}),
         }),
       });
 
@@ -171,6 +182,57 @@ export default function DashboardPage() {
                       </option>
                     ))}
                   </select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Filmmaker Preset</Label>
+                  <select
+                    className="w-full p-2 rounded border bg-background"
+                    value={selectedPreset}
+                    onChange={(e) => setSelectedPreset(e.target.value)}
+                  >
+                    <option value="">None (use DNA profile only)</option>
+                    {presets.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} ({p.category})
+                      </option>
+                    ))}
+                  </select>
+                  {selectedPreset && (
+                    <p className="text-xs text-muted-foreground">
+                      Preset overrides your DNA profile&apos;s style settings for this job.
+                    </p>
+                  )}
+                </div>
+
+                {/* Preset Cards Grid */}
+                <div className="grid grid-cols-2 gap-2">
+                  {presets.map((preset) => (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() =>
+                        setSelectedPreset(
+                          selectedPreset === preset.id ? "" : preset.id
+                        )
+                      }
+                      className={`text-left p-3 rounded-lg border transition-all ${
+                        selectedPreset === preset.id
+                          ? "ring-2 ring-white border-white"
+                          : "border-gray-700 hover:border-gray-500"
+                      } ${CATEGORY_COLORS[preset.category] || "bg-gray-900/30 border-gray-700 text-gray-300"}`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-semibold text-sm">{preset.name}</span>
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                          {preset.category}
+                        </Badge>
+                      </div>
+                      <p className="text-[11px] opacity-80 line-clamp-2">
+                        {preset.description}
+                      </p>
+                    </button>
+                  ))}
                 </div>
 
                 <div className="space-y-2">

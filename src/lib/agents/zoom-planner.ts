@@ -45,10 +45,11 @@ const DEFAULT_CONFIG: ZoomConfig = {
 /**
  * Zoom level crop factors.
  */
+// Subtle zoom levels — subject must always remain fully visible
 const ZOOM_LEVELS = {
   normal: 1.0,
-  punched_in: 1.3,
-  tight: 1.5,
+  punched_in: 1.1,   // 10% crop — gentle emphasis
+  tight: 1.15,        // 15% crop — noticeable but safe
 } as const;
 
 /**

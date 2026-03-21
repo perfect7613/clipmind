@@ -35,37 +35,223 @@ const DEFAULT_BRAND: BrandConfig = {
 };
 
 /**
- * Load key Remotion skill rules to pass as context to Claude.
+ * Load ALL Remotion skill rules — every .md file + asset examples.
+ * Passes the entire knowledge base to Claude for maximum quality.
  */
-async function loadRemotionSkillContext(): Promise<string> {
-  const skillDir = path.resolve(process.cwd(), ".claude/skills/remotion/rules");
-  const rules: string[] = [];
+async function loadFullRemotionSkills(): Promise<string> {
+  const rulesDir = path.resolve(process.cwd(), ".claude/skills/remotion/rules");
+  const parts: string[] = [];
 
-  for (const file of ["animations.md", "timing.md", "compositions.md"]) {
-    try {
-      const content = await fs.readFile(path.join(skillDir, file), "utf-8");
-      rules.push(content);
-    } catch {
-      // Skill files may not exist
+  try {
+    const files = await fs.readdir(rulesDir);
+    const mdFiles = files.filter((f) => f.endsWith(".md")).sort();
+
+    for (const file of mdFiles) {
+      try {
+        const content = await fs.readFile(path.join(rulesDir, file), "utf-8");
+        parts.push(`=== ${file} ===\n${content}`);
+      } catch { /* skip unreadable */ }
     }
+
+    // Also load asset examples (real working Remotion components)
+    const assetsDir = path.join(rulesDir, "assets");
+    try {
+      const assetFiles = await fs.readdir(assetsDir);
+      for (const file of assetFiles.filter((f) => f.endsWith(".tsx"))) {
+        try {
+          const content = await fs.readFile(path.join(assetsDir, file), "utf-8");
+          parts.push(`=== EXAMPLE: ${file} ===\n${content}`);
+        } catch { /* skip */ }
+      }
+    } catch { /* no assets dir */ }
+  } catch {
+    // Fallback if directory doesn't exist
+    return getFallbackRules();
   }
 
-  if (rules.length === 0) {
-    return `REMOTION RULES:
-- All animations MUST use useCurrentFrame() hook
+  if (parts.length === 0) return getFallbackRules();
+  return parts.join("\n\n");
+}
+
+function getFallbackRules(): string {
+  return `REMOTION CORE RULES:
+- All animations MUST use useCurrentFrame() hook — NEVER CSS transitions or Tailwind animations
 - Use interpolate() for linear animations, spring() for natural motion
-- CSS transitions and Tailwind animations are FORBIDDEN
-- Always clamp extrapolation: { extrapolateRight: "clamp" }
-- spring() config: { damping: 200 } for smooth, { damping: 20, stiffness: 200 } for snappy`;
-  }
-
-  return "REMOTION SKILL RULES:\n" + rules.join("\n---\n").slice(0, 3000);
+- Always clamp: { extrapolateRight: "clamp", extrapolateLeft: "clamp" }
+- spring() configs: { damping: 200 } smooth, { damping: 20, stiffness: 200 } snappy, { damping: 8 } bouncy
+- Use Easing.out for entrances, Easing.in for exits
+- Compose interpolations: create normalized progress (0-1), derive all properties from it
+- Stagger delays: spring({ frame, fps, delay: i * STAGGER_DELAY })
+- For typewriter: use string.slice(0, charCount), never per-character opacity
+- SVG paths: use stroke-dasharray/dashoffset for drawing animations`;
 }
 
 /**
- * Generate Remotion React components on the fly for each show moment.
- * Uses Claude Sonnet with Remotion skill rules + Creator DNA brand system
- * to generate unique, contextual animations.
+ * Complex visual effects reference for Claude.
+ * These are advanced techniques beyond basic text/scale animations.
+ */
+const COMPLEX_EFFECTS_GUIDE = `
+=== COMPLEX VISUAL EFFECTS GUIDE ===
+
+These are advanced Remotion animation techniques. Use these to create cinematic, professional overlays.
+
+## DOLLY ZOOM (Vertigo Effect)
+Simultaneously zoom in while scaling down (or vice versa) to create a disorienting perspective shift.
+\`\`\`tsx
+const frame = useCurrentFrame();
+const { fps, durationInFrames } = useVideoConfig();
+const progress = interpolate(frame, [0, durationInFrames], [0, 1], { extrapolateRight: "clamp" });
+
+// Zoom in while the container scales down — creates vertigo effect
+const zoom = interpolate(progress, [0, 1], [1, 1.8]);
+const counterScale = interpolate(progress, [0, 1], [1, 0.6]);
+
+<div style={{
+  transform: \`scale(\${zoom})\`,
+}}>
+  <div style={{
+    transform: \`scale(\${counterScale})\`,
+    transformOrigin: "center center",
+  }}>
+    {/* content */}
+  </div>
+</div>
+\`\`\`
+
+## KEN BURNS (Slow Zoom + Pan)
+Subtle, cinematic slow zoom with gentle pan — used in documentaries.
+\`\`\`tsx
+const progress = interpolate(frame, [0, durationInFrames], [0, 1], { extrapolateRight: "clamp", easing: Easing.inOut(Easing.cubic) });
+const scale = interpolate(progress, [0, 1], [1, 1.15]);
+const translateX = interpolate(progress, [0, 1], [0, -20]);
+const translateY = interpolate(progress, [0, 1], [0, -10]);
+
+<div style={{ transform: \`scale(\${scale}) translate(\${translateX}px, \${translateY}px)\` }}>
+\`\`\`
+
+## PARALLAX LAYERS
+Multiple layers moving at different speeds for depth.
+\`\`\`tsx
+const progress = interpolate(frame, [0, durationInFrames], [0, 1], { extrapolateRight: "clamp" });
+// Background moves slow, foreground moves fast
+const bgY = interpolate(progress, [0, 1], [0, -20]);
+const midY = interpolate(progress, [0, 1], [0, -40]);
+const fgY = interpolate(progress, [0, 1], [0, -80]);
+\`\`\`
+
+## GLITCH EFFECT
+Random position/color shifts for impact moments.
+\`\`\`tsx
+const glitchActive = frame % 8 < 2; // Glitch every 8 frames for 2 frames
+const glitchX = glitchActive ? (Math.sin(frame * 73) * 10) : 0;
+const glitchY = glitchActive ? (Math.cos(frame * 47) * 5) : 0;
+const clipPath = glitchActive ? \`inset(\${Math.random() * 40}% 0 \${Math.random() * 40}% 0)\` : "none";
+\`\`\`
+
+## REVEAL WIPE
+Content revealed by an animated mask/bar sweeping across.
+\`\`\`tsx
+const wipeProgress = spring({ frame, fps, config: { damping: 200 } });
+const clipPercent = interpolate(wipeProgress, [0, 1], [0, 100]);
+<div style={{ clipPath: \`inset(0 \${100 - clipPercent}% 0 0)\` }}>
+\`\`\`
+
+## MORPHING NUMBERS / COUNTER
+Smooth number counting with easing.
+\`\`\`tsx
+const progress = interpolate(frame, [0, 2 * fps], [0, 1], { extrapolateRight: "clamp", easing: Easing.out(Easing.cubic) });
+const displayNumber = Math.round(interpolate(progress, [0, 1], [0, targetValue]));
+<span>{displayNumber.toLocaleString()}</span>
+\`\`\`
+
+## CIRCULAR PROGRESS / RADIAL WIPE
+SVG circle that fills as a progress indicator.
+\`\`\`tsx
+const circumference = 2 * Math.PI * radius;
+const progress = spring({ frame, fps, config: { damping: 200 } });
+const strokeDashoffset = circumference * (1 - progress);
+<circle r={radius} cx={cx} cy={cy} fill="none" stroke={color}
+  strokeWidth={8} strokeDasharray={circumference}
+  strokeDashoffset={strokeDashoffset} strokeLinecap="round"
+  transform={\`rotate(-90 \${cx} \${cy})\`} />
+\`\`\`
+
+## STAGGERED GRID REVEAL
+Items in a grid appear one by one with staggered spring delays.
+\`\`\`tsx
+const items = data.map((item, i) => {
+  const row = Math.floor(i / cols);
+  const col = i % cols;
+  const delay = (row + col) * 4; // Diagonal reveal
+  const scale = spring({ frame, fps, delay, config: { damping: 200 } });
+  const opacity = interpolate(frame - delay, [0, 8], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+  return { ...item, scale, opacity };
+});
+\`\`\`
+
+## 3D FLIP / CARD REVEAL
+Element rotates in 3D to reveal content.
+\`\`\`tsx
+const flipProgress = spring({ frame, fps, config: { damping: 15, stiffness: 80 } });
+const rotateY = interpolate(flipProgress, [0, 1], [90, 0]);
+<div style={{ perspective: 1000, perspectiveOrigin: "center" }}>
+  <div style={{ transform: \`rotateY(\${rotateY}deg)\`, backfaceVisibility: "hidden" }}>
+\`\`\`
+
+## SPLIT SCREEN COMPARISON
+Two panels slide in from opposite sides.
+\`\`\`tsx
+const leftSlide = spring({ frame, fps, config: { damping: 200 } });
+const rightSlide = spring({ frame, fps, delay: 8, config: { damping: 200 } });
+const leftX = interpolate(leftSlide, [0, 1], [-50, 0]); // % units
+const rightX = interpolate(rightSlide, [0, 1], [50, 0]);
+\`\`\`
+
+## PULSE / BREATHING GLOW
+Subtle scale oscillation for emphasis.
+\`\`\`tsx
+const pulse = Math.sin(frame * 0.15) * 0.03 + 1; // Scale between 0.97 and 1.03
+const glowOpacity = Math.sin(frame * 0.1) * 0.3 + 0.7;
+<div style={{ transform: \`scale(\${pulse})\`, filter: \`drop-shadow(0 0 \${glowOpacity * 20}px \${primaryColor})\` }}>
+\`\`\`
+
+## ELASTIC BOUNCE ENTRANCE
+Spring with low damping for playful, bouncy entrances.
+\`\`\`tsx
+const bounce = spring({ frame, fps, config: { damping: 8, stiffness: 150 } });
+const scale = interpolate(bounce, [0, 1], [0, 1]); // Overshoots then settles
+const rotation = interpolate(bounce, [0, 1], [-15, 0]);
+\`\`\`
+
+## TYPEWRITER WITH CURSOR
+Text appears character by character with blinking cursor.
+\`\`\`tsx
+const charCount = Math.floor(frame / 2); // 2 frames per character
+const displayText = fullText.slice(0, charCount);
+const cursorOpacity = interpolate(frame % 16, [0, 8, 16], [1, 0, 1]);
+<span>{displayText}<span style={{ opacity: cursorOpacity }}>|</span></span>
+\`\`\`
+
+## WORD HIGHLIGHT WIPE
+Highlighter pen effect sweeping under a word.
+\`\`\`tsx
+const wipeProgress = spring({ frame, fps, delay: startDelay, config: { damping: 200 } });
+<span style={{ position: "relative" }}>
+  <span style={{ position: "absolute", left: 0, right: 0, bottom: "0.1em", height: "0.35em",
+    backgroundColor: highlightColor, transform: \`scaleX(\${wipeProgress})\`, transformOrigin: "left",
+    borderRadius: 4, zIndex: 0 }} />
+  <span style={{ position: "relative", zIndex: 1 }}>{word}</span>
+</span>
+\`\`\`
+`;
+
+/**
+ * Generate Remotion React components for each show moment.
+ *
+ * Passes to Claude:
+ * - ALL Remotion skill rules (every .md file + asset examples)
+ * - FULL Creator DNA skill content (no truncation)
+ * - Complex effects guide (dolly zoom, vertigo, Ken Burns, parallax, etc.)
  */
 export async function generateAnimations(
   moments: ShowMoment[],
@@ -75,13 +261,12 @@ export async function generateAnimations(
   if (moments.length === 0) return [];
 
   const b = { ...DEFAULT_BRAND, ...brand };
-  const remotionRules = await loadRemotionSkillContext();
+  const remotionSkills = await loadFullRemotionSkills();
   const animations: GeneratedAnimation[] = [];
 
-  // Generate each animation individually for better quality
   for (const moment of moments) {
     try {
-      const anim = await generateSingleAnimation(moment, b, remotionRules, dnaSkillContent);
+      const anim = await generateSingleAnimation(moment, b, remotionSkills, dnaSkillContent || "");
       if (anim) animations.push(anim);
     } catch (err) {
       console.error(`[AnimGen] Failed for moment at ${moment.timestamp_s}s:`, err);
@@ -94,43 +279,79 @@ export async function generateAnimations(
 async function generateSingleAnimation(
   moment: ShowMoment,
   brand: BrandConfig,
-  remotionRules: string,
-  dnaSkillContent?: string
+  remotionSkills: string,
+  dnaSkillContent: string
 ): Promise<GeneratedAnimation | null> {
   const response = await anthropic.messages.create({
     model: "claude-sonnet-4-6",
-    max_tokens: 3000,
+    max_tokens: 6000,
     messages: [{
       role: "user",
-      content: `Generate a Remotion React component for this video animation moment.
+      content: `You are an expert Remotion motion graphics developer. Create a visually stunning, cinematic overlay animation component.
 
-${remotionRules}
+============================
+REMOTION SKILL RULES (FULL)
+============================
+${remotionSkills}
 
-BRAND SYSTEM:
-- Primary color: ${brand.primaryColor}
-- Secondary color: ${brand.secondaryColor}
-- Background: ${brand.darkModeDefault ? "#111111" : "#ffffff"}
-- Heading font: ${brand.headingFont}
-- Body font: ${brand.bodyFont}
-- Style: ${brand.animationStyle}
-${dnaSkillContent ? `\nCREATOR DNA (excerpt):\n${dnaSkillContent.slice(0, 400)}` : ""}
+${COMPLEX_EFFECTS_GUIDE}
 
-MOMENT TO ANIMATE:
+============================
+CREATOR DNA SKILL (FULL)
+============================
+${dnaSkillContent || "No DNA skill provided — use defaults."}
+
+============================
+BRAND SYSTEM
+============================
+- Primary: ${brand.primaryColor}
+- Secondary: ${brand.secondaryColor}
+- Heading font: "${brand.headingFont}"
+- Body font: "${brand.bodyFont}"
+- Animation style: ${brand.animationStyle}
+- Dark mode: ${brand.darkModeDefault}
+
+============================
+MOMENT TO ANIMATE
+============================
 - Type: ${moment.suggested_type}
 - Content: "${moment.content}"
 - Context: "${moment.context}"
-- Duration: ${moment.duration_s} seconds at 30fps = ${Math.round(moment.duration_s * 30)} frames
+- Duration: ${moment.duration_s}s @ 30fps = ${Math.round(moment.duration_s * 30)} frames
 
-STRICT REQUIREMENTS:
-1. The component MUST be a default export: export default function AnimComponent() { ... }
-2. Import ONLY from "remotion": { AbsoluteFill, useCurrentFrame, useVideoConfig, interpolate, spring }
-3. All animation driven by useCurrentFrame() — NO CSS transitions, NO Tailwind animations
-4. Use the brand colors and fonts from above
-5. Use spring() for entrances, interpolate() for progress-based values
-6. Clamp extrapolation: { extrapolateRight: "clamp", extrapolateLeft: "clamp" }
-7. The component must be self-contained — no external imports, no external state
+============================
+WHAT TO BUILD FOR EACH TYPE
+============================
+- text_card → Use REVEAL WIPE + PARALLAX or DOLLY ZOOM entrance. Bold statement with accent line, gradient glow, word highlight on key word. NOT just plain text.
+- animated_counter → Use MORPHING NUMBERS + CIRCULAR PROGRESS. Smooth eased counting with a radial or bar progress indicator. Show unit/label.
+- building_flowchart → Use STAGGERED GRID REVEAL. Nodes appear with connecting animated lines (SVG). Each step springs in with delay. Arrow/line draws with dashoffset.
+- side_by_side → Use SPLIT SCREEN COMPARISON + 3D FLIP. Two panels slide/flip from opposite sides. Color-coded with brand colors.
+- list_builder → Use staggered springs with ELASTIC BOUNCE. Each bullet slides up and bounces into place. Accent dots/icons per item.
+- data_bar → Use bar chart pattern from Remotion skills. Horizontal bars fill with spring(). Labels and values animate. Background grid lines.
+- framework_grid → Use STAGGERED GRID REVEAL with 3D FLIP per cell. Diagonal reveal pattern. Each cell has icon + label.
 
-Return ONLY the complete TypeScript React component code. No markdown, no explanation, no backticks.`,
+============================
+STRICT REQUIREMENTS
+============================
+1. export default function AnimOverlay() { ... }
+2. Import ONLY from "remotion": { AbsoluteFill, useCurrentFrame, useVideoConfig, interpolate, spring, Easing }
+3. All animation driven by useCurrentFrame() — NEVER CSS transitions/Tailwind
+4. Use brand colors and fonts
+5. Always clamp interpolation
+6. TRANSPARENT OVERLAY — no backgroundColor on <AbsoluteFill>
+   - Text shadow: textShadow: "0 2px 12px rgba(0,0,0,0.9), 0 1px 3px rgba(0,0,0,0.6)"
+   - Pill backgrounds: rgba(0,0,0,0.65) with borderRadius
+7. ENTER animation (first 15-20 frames) + EXIT animation (last 10-15 frames)
+8. Make it CINEMATIC — use multiple effects:
+   - Combine scale + translate + opacity + rotation
+   - Use parallax (elements at different speeds)
+   - Staggered timing for multiple elements
+   - Accent decorations (lines, dots, glows, SVG shapes)
+   - Visual hierarchy (size, weight, color contrast)
+   - Ken Burns or dolly zoom where appropriate
+9. The component is self-contained — no external imports
+
+Return ONLY the TypeScript React component code. No markdown fences, no explanation.`,
     }],
   });
 
@@ -139,35 +360,16 @@ Return ONLY the complete TypeScript React component code. No markdown, no explan
 
   let code = textBlock.text.trim();
 
-  // Strip markdown code fences if present
   if (code.startsWith("```")) {
     code = code.replace(/^```(?:tsx?|jsx?)?\n?/, "").replace(/\n?```$/, "");
   }
 
-  // Ensure it has a default export
   if (!code.includes("export default")) {
-    // Try to find the component name and add default export
     const match = code.match(/(?:const|function)\s+(\w+)/);
     if (match) {
       code += `\nexport default ${match[1]};`;
     } else {
-      // Wrap in a default export
-      code = `import { AbsoluteFill, useCurrentFrame, useVideoConfig, interpolate, spring } from "remotion";
-
-export default function AnimComponent() {
-  const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
-  const opacity = interpolate(frame, [0, 10], [0, 1], { extrapolateRight: "clamp" });
-  const slideUp = spring({ frame, fps, config: { damping: 200 } });
-
-  return (
-    <AbsoluteFill style={{ backgroundColor: "${brand.darkModeDefault ? "#111" : "#fff"}", justifyContent: "center", alignItems: "center" }}>
-      <div style={{ fontSize: 64, fontWeight: 700, color: "${brand.primaryColor}", opacity, transform: \`translateY(\${(1 - slideUp) * 40}px)\`, textAlign: "center", fontFamily: "${brand.headingFont}", padding: "0 80px" }}>
-        ${JSON.stringify(moment.content)}
-      </div>
-    </AbsoluteFill>
-  );
-}`;
+      code = buildFallbackComponent(moment, brand);
     }
   }
 
@@ -179,7 +381,106 @@ export default function AnimComponent() {
     props: {
       text: moment.content,
       primaryColor: brand.primaryColor,
-      bgColor: brand.darkModeDefault ? "#111" : "#fff",
+      secondaryColor: brand.secondaryColor,
     },
   };
+}
+
+function buildFallbackComponent(moment: ShowMoment, brand: BrandConfig): string {
+  const content = JSON.stringify(moment.content);
+  return `import { AbsoluteFill, useCurrentFrame, useVideoConfig, interpolate, spring, Easing } from "remotion";
+
+export default function AnimOverlay() {
+  const frame = useCurrentFrame();
+  const { fps, durationInFrames } = useVideoConfig();
+
+  // Ken Burns entrance
+  const kenBurns = interpolate(frame, [0, durationInFrames], [1, 1.08], {
+    extrapolateRight: "clamp",
+    easing: Easing.inOut(Easing.cubic),
+  });
+
+  // Reveal wipe
+  const wipe = spring({ frame, fps, config: { damping: 200 } });
+  const clipPercent = interpolate(wipe, [0, 1], [100, 0]);
+
+  // Enter/exit
+  const enterOpacity = interpolate(frame, [0, 15], [0, 1], { extrapolateRight: "clamp" });
+  const exitOpacity = interpolate(frame, [durationInFrames - 12, durationInFrames], [1, 0], { extrapolateLeft: "clamp" });
+  const opacity = Math.min(enterOpacity, exitOpacity);
+
+  // Slide up entrance
+  const slideUp = spring({ frame, fps, config: { damping: 200 } });
+  const translateY = interpolate(slideUp, [0, 1], [40, 0]);
+
+  // Accent line
+  const lineProgress = spring({ frame, fps, delay: 5, config: { damping: 200 } });
+  const lineWidth = interpolate(lineProgress, [0, 1], [0, 120]);
+
+  // Accent dot pulse
+  const pulse = Math.sin(frame * 0.15) * 0.3 + 0.7;
+
+  return (
+    <AbsoluteFill style={{
+      justifyContent: "center",
+      alignItems: "center",
+      transform: \`scale(\${kenBurns})\`,
+    }}>
+      <div style={{
+        opacity,
+        transform: \`translateY(\${translateY}px)\`,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: 16,
+      }}>
+        {/* Accent dot */}
+        <div style={{
+          width: 8, height: 8,
+          borderRadius: "50%",
+          backgroundColor: "${brand.primaryColor}",
+          opacity: pulse,
+          boxShadow: \`0 0 \${pulse * 15}px ${brand.primaryColor}\`,
+        }} />
+
+        {/* Top accent line */}
+        <div style={{
+          width: lineWidth,
+          height: 3,
+          backgroundColor: "${brand.primaryColor}",
+          borderRadius: 2,
+        }} />
+
+        {/* Main text with reveal wipe */}
+        <div style={{
+          clipPath: \`inset(0 \${clipPercent}% 0 0)\`,
+        }}>
+          <div style={{
+            fontSize: 56,
+            fontWeight: 700,
+            color: "#ffffff",
+            fontFamily: "${brand.headingFont}",
+            padding: "20px 48px",
+            backgroundColor: "rgba(0,0,0,0.65)",
+            borderRadius: 16,
+            textShadow: "0 2px 12px rgba(0,0,0,0.9), 0 1px 3px rgba(0,0,0,0.6)",
+            borderLeft: \`4px solid ${brand.primaryColor}\`,
+            textAlign: "center",
+            maxWidth: 900,
+          }}>
+            ${content}
+          </div>
+        </div>
+
+        {/* Bottom accent line */}
+        <div style={{
+          width: lineWidth * 0.6,
+          height: 2,
+          backgroundColor: "${brand.secondaryColor}",
+          borderRadius: 2,
+        }} />
+      </div>
+    </AbsoluteFill>
+  );
+}`;
 }

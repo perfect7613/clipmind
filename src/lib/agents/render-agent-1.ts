@@ -3,31 +3,35 @@ import path from "path";
 import os from "os";
 import { promises as fs } from "fs";
 import type { SelectedClip } from "./clip-selector";
-import { buildColorFilterChain, type ColorProfile } from "./color-correction";
 import { buildAudioFilterChain, type AudioProfile } from "./audio-mastering";
+import { buildVideoFilterChain, extractEffectsFromDna, type EffectsConfig } from "./ffmpeg-effects";
+import { planZoomEvents, type ZoomEvent, type ZoomPlan } from "./zoom-planner";
+import type { WordTimestamp } from "@/types";
 
 interface RenderConfig {
-  colorProfile: ColorProfile;
+  colorProfile: string;
   audioProfile: AudioProfile;
-  outputWidth: number;
-  outputHeight: number;
-  fps: number;
   crf: number;
+  dnaContent?: string;
+  clipWords?: WordTimestamp[];
 }
 
 const DEFAULT_RENDER_CONFIG: RenderConfig = {
   colorProfile: "neutral",
   audioProfile: "youtube_standard",
-  outputWidth: 1920,
-  outputHeight: 1080,
-  fps: 30,
   crf: 22,
 };
 
 /**
- * Render a single clip from the source video.
- * Uses -ss/-to for reliable seeking, then applies color + audio filters.
- * This is the simple, robust approach — one clip at a time.
+ * Render a single clip with the full FFmpeg effects pipeline.
+ *
+ * This is where ALL real video editing happens:
+ * - Trim to clip boundaries
+ * - AI-planned zoom events (Ken Burns, punch-in, tight)
+ * - Color grading (warm/cool/cinematic) from DNA
+ * - Vignette, film grain, bleach bypass from DNA
+ * - Fade in/out
+ * - Audio mastering (-16 LUFS)
  */
 export async function renderClip(
   inputPath: string,
@@ -40,30 +44,46 @@ export async function renderClip(
   await fs.mkdir(outputDir, { recursive: true });
   const outputPath = path.join(outputDir, `edited-clip-${clipIndex + 1}.mp4`);
 
-  const colorFilter = buildColorFilterChain(cfg.colorProfile);
-  const audioFilter = buildAudioFilterChain({ style: cfg.audioProfile });
+  const clipDurationS = clip.end_s - clip.start_s;
 
-  // Build video filter chain: scale to even dims → color correction → fps
-  const videoFilters: string[] = [
-    // Ensure even dimensions (required for libx264)
-    `scale=trunc(iw/2)*2:trunc(ih/2)*2`,
-  ];
-  if (colorFilter !== "null") {
-    videoFilters.push(colorFilter);
+  // ── Plan zoom events if we have clip words ──
+  let zoomPlan: ZoomPlan | null = null;
+  if (cfg.clipWords && cfg.clipWords.length > 0) {
+    try {
+      // Extract zoom config from DNA
+      const zoomAggressiveness = extractDnaFloat(cfg.dnaContent, "Aggressiveness", 0.5);
+      const maxZoomLevel = extractDnaFloat(cfg.dnaContent, "Max zoom level", 1.5);
+
+      zoomPlan = await planZoomEvents(cfg.clipWords, clipDurationS, {
+        aggressiveness: zoomAggressiveness,
+        maxZoomLevel: maxZoomLevel,
+      });
+      console.log(`[Render] Planned ${zoomPlan.events.length} zoom events for clip ${clipIndex + 1}`);
+    } catch (err) {
+      console.error(`[Render] Zoom planning failed for clip ${clipIndex + 1}, skipping:`, err);
+    }
   }
-  videoFilters.push(`fps=${cfg.fps}`);
-  videoFilters.push("setsar=1:1");
+
+  // ── Extract effects config from DNA ──
+  const dnaEffects = cfg.dnaContent ? extractEffectsFromDna(cfg.dnaContent) : {};
+
+  // ── Build video filter chain with all effects ──
+  const effectsConfig: Partial<EffectsConfig> = {
+    ...dnaEffects,
+    colorProfile: (cfg.colorProfile as EffectsConfig["colorProfile"]) || dnaEffects.colorProfile || "neutral",
+    clipDurationS,
+    zoomEvents: zoomPlan?.events || [],
+  };
+
+  const videoFilter = buildVideoFilterChain(effectsConfig);
+  const audioFilter = buildAudioFilterChain({ style: cfg.audioProfile });
 
   return new Promise((resolve, reject) => {
     ffmpeg(inputPath)
-      // Seek to clip start (input seeking — fast and keyframe-accurate)
       .setStartTime(clip.start_s)
-      .duration(clip.end_s - clip.start_s)
-      // Video filters: scale + color + fps
-      .videoFilters(videoFilters.join(","))
-      // Audio filters: mastering chain
+      .duration(clipDurationS)
+      .videoFilters(videoFilter)
       .audioFilters(audioFilter)
-      // Encoding
       .outputOptions([
         "-c:v", "libx264",
         "-crf", String(cfg.crf),
@@ -76,6 +96,7 @@ export async function renderClip(
       .output(outputPath)
       .on("start", (cmd) => {
         console.log(`[Render] Clip ${clipIndex + 1}: ${clip.start_s}s → ${clip.end_s}s`);
+        console.log(`[Render] Effects: color=${effectsConfig.colorProfile}, vignette=${effectsConfig.vignette}, grain=${effectsConfig.filmGrain}, zooms=${zoomPlan?.events.length || 0}`);
         console.log(`[Render] Command: ${cmd}`);
       })
       .on("end", () => {
@@ -85,56 +106,47 @@ export async function renderClip(
       .on("error", (err, stdout, stderr) => {
         console.error(`[Render] Clip ${clipIndex + 1} failed:`, err.message);
         console.error(`[Render] stderr:`, stderr);
-        reject(new Error(`Render failed for clip ${clipIndex + 1}: ${err.message}`));
+
+        // Fallback: try without zoom (most likely cause of failure)
+        if (zoomPlan && zoomPlan.events.length > 0) {
+          console.log(`[Render] Retrying clip ${clipIndex + 1} without zoom...`);
+          const simpleFilter = buildVideoFilterChain({
+            ...effectsConfig,
+            zoomEvents: [],
+          });
+          ffmpeg(inputPath)
+            .setStartTime(clip.start_s)
+            .duration(clipDurationS)
+            .videoFilters(simpleFilter)
+            .audioFilters(audioFilter)
+            .outputOptions([
+              "-c:v", "libx264",
+              "-crf", String(cfg.crf),
+              "-preset", "fast",
+              "-c:a", "aac",
+              "-b:a", "192k",
+              "-movflags", "+faststart",
+              "-pix_fmt", "yuv420p",
+            ])
+            .output(outputPath)
+            .on("end", () => {
+              console.log(`[Render] Clip ${clipIndex + 1} done (no zoom fallback): ${outputPath}`);
+              resolve(outputPath);
+            })
+            .on("error", (err2) => {
+              reject(new Error(`Render failed for clip ${clipIndex + 1}: ${err2.message}`));
+            })
+            .run();
+        } else {
+          reject(new Error(`Render failed for clip ${clipIndex + 1}: ${err.message}`));
+        }
       })
       .run();
   });
 }
 
-/**
- * Render all selected clips from the source video.
- * Each clip is rendered independently — simpler and more reliable than
- * a single filter_complex with 50+ segments.
- */
-export async function renderSkill1(
-  inputPaths: string[],
-  clips: SelectedClip[],
-  outputDir?: string,
-  config: Partial<RenderConfig> = {}
-): Promise<string[]> {
-  const dir = outputDir || path.join(os.tmpdir(), `clipmind-render-${Date.now()}`);
-  await fs.mkdir(dir, { recursive: true });
-
-  const inputPath = inputPaths[0]; // Primary camera
-  const results: string[] = [];
-
-  for (let i = 0; i < clips.length; i++) {
-    try {
-      const outputPath = await renderClip(inputPath, clips[i], dir, i, config);
-      results.push(outputPath);
-    } catch (err) {
-      console.error(`Skipping clip ${i + 1} due to render error:`, err);
-      // Continue with other clips — don't fail the whole batch
-    }
-  }
-
-  if (results.length === 0) {
-    throw new Error("All clip renders failed");
-  }
-
-  return results;
-}
-
-// Keep for backwards compat but simplified
-export function buildRenderSegments(
-  clips: SelectedClip[],
-  _zoomCrops: any[] = [],
-  _sourceIndex: number = 0
-) {
-  // Zoom is now handled separately, not in render segments
-  return clips.map((clip) => ({
-    start_s: clip.start_s,
-    end_s: clip.end_s,
-    sourceIndex: _sourceIndex,
-  }));
+function extractDnaFloat(dnaContent: string | undefined, key: string, defaultValue: number): number {
+  if (!dnaContent) return defaultValue;
+  const match = dnaContent.match(new RegExp(`${key}[:\\s]*([\\d.]+)`, "i"));
+  return match ? parseFloat(match[1]) : defaultValue;
 }

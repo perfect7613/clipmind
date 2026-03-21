@@ -41,6 +41,11 @@ export const DnaSkillParamsSchema = z.object({
     removeFillers: z.boolean(),
     fillerWords: z.array(z.string()),
   }),
+  speedRamp: z.object({
+    intensity: z.enum(["none", "subtle", "moderate", "aggressive"]),
+    slowMoFactor: z.number().min(0.25).max(1),
+    speedUpFactor: z.number().min(1).max(4),
+  }),
   animationDensity: z.enum(["none", "light", "moderate", "heavy"]),
   contentType: z.enum(["vlog", "podcast", "educational", "commentary", "mixed"]),
   humorType: z.enum(["dry", "absurdist", "self-deprecating", "observational", "none"]),
@@ -91,6 +96,11 @@ export const DEFAULT_DNA_PARAMS: DnaSkillParams = {
     silenceToleranceMs: 500,
     removeFillers: true,
     fillerWords: ["um", "uh", "like", "you know", "sort of", "I mean", "basically"],
+  },
+  speedRamp: {
+    intensity: "subtle",
+    slowMoFactor: 0.7,
+    speedUpFactor: 1.5,
   },
   animationDensity: "moderate",
   contentType: "vlog",

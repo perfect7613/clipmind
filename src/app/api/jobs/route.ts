@@ -1,10 +1,43 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { db } from "@/lib/db";
-import { jobs, projects } from "@/lib/db/schema";
+import { jobs, projects, clips } from "@/lib/db/schema";
 import { runPipeline } from "@/lib/agents/coordinator";
 import { ensureUser } from "@/lib/ensure-user";
-import { eq } from "drizzle-orm";
+import { getPreset } from "@/lib/presets/filmmaker-presets";
+import { eq, desc } from "drizzle-orm";
+
+/**
+ * GET /api/jobs — List the current user's jobs with their clips.
+ */
+export async function GET() {
+  try {
+    const supabase = await createClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const userJobs = await db
+      .select()
+      .from(jobs)
+      .where(eq(jobs.userId, user.id))
+      .orderBy(desc(jobs.createdAt));
+
+    // Attach clips to each job
+    const jobsWithClips = await Promise.all(
+      userJobs.map(async (job) => {
+        const jobClips = await db.select().from(clips).where(eq(clips.jobId, job.id));
+        return { ...job, clips: jobClips };
+      })
+    );
+
+    return NextResponse.json({ jobs: jobsWithClips });
+  } catch (error) {
+    console.error("List jobs error:", error);
+    return NextResponse.json({ error: "Internal error" }, { status: 500 });
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -17,10 +50,18 @@ export async function POST(request: NextRequest) {
     await ensureUser(user.id, user.email!);
 
     const body = await request.json();
-    const { videoUrls, dnaProfileId, platform, clipCount, skipAnimations, skipBroll } = body;
+    const { videoUrls, dnaProfileId, platform, clipCount, presetId, skipAnimations, skipBroll } = body;
 
     if (!videoUrls?.length || !dnaProfileId || !platform) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+    }
+
+    // Validate preset if provided
+    if (presetId) {
+      const preset = getPreset(presetId);
+      if (!preset) {
+        return NextResponse.json({ error: "Invalid preset ID" }, { status: 400 });
+      }
     }
 
     // Create project
@@ -40,12 +81,13 @@ export async function POST(request: NextRequest) {
       status: "processing",
       currentStep: "starting",
       videoUrls: videoUrls,
+      presetId: presetId || null,
       startedAt: new Date(),
     }).returning();
 
     // Run pipeline async (don't await — return job ID immediately)
     runPipeline(
-      { videoUrls, dnaProfileId, platform, clipCount: clipCount || 5, skipAnimations, skipBroll },
+      { videoUrls, dnaProfileId, platform, clipCount: clipCount || 5, presetId, skipAnimations, skipBroll },
       user.id,
       async (step, pct) => {
         await db.update(jobs).set({
@@ -59,6 +101,7 @@ export async function POST(request: NextRequest) {
         currentStep: "completed",
         progressPct: 100,
         resultUrls: result.clips.map((c) => c.render_url),
+        highlightReelUrl: result.highlightReelUrl || null,
         completedAt: new Date(),
       }).where(eq(jobs.id, job.id));
 
@@ -73,6 +116,8 @@ export async function POST(request: NextRequest) {
           mood: clip.mood,
           scores: clip.scores,
           renderUrl: clip.render_url,
+          thumbnailsDir: clip.thumbnails_dir || null,
+          timelineData: clip.timeline_data || null,
         });
       }
     }).catch(async (err) => {

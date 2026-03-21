@@ -81,6 +81,11 @@ Return a JSON object matching this exact structure (fill in values based on the 
     "removeFillers": boolean,
     "fillerWords": ["list of filler words detected"]
   },
+  "speedRamp": {
+    "intensity": "none" | "subtle" | "moderate" | "aggressive",
+    "slowMoFactor": number (0.5-0.75, how much to slow down key moments),
+    "speedUpFactor": number (1.5-2.0, how much to speed up dead air)
+  },
   "animationDensity": "none" | "light" | "moderate" | "heavy",
   "contentType": "vlog" | "podcast" | "educational" | "commentary" | "mixed",
   "humorType": "dry" | "absurdist" | "self-deprecating" | "observational" | "none",

@@ -13,12 +13,11 @@ export interface RenderedAnimation {
 }
 
 /**
- * Render Claude-generated Remotion components to MP4.
- * Each animation is:
- * 1. Written to a temp directory as a .tsx file
- * 2. Wrapped with a Remotion entry point (registerRoot + Composition)
- * 3. Bundled with @remotion/bundler
- * 4. Rendered with @remotion/renderer
+ * Render Claude-generated Remotion animation components to transparent WebM clips.
+ * Each animation is rendered independently as a transparent overlay clip
+ * that FFmpeg (render-agent-3) will composite onto the edited video.
+ *
+ * Uses VP9 codec with alpha channel for transparency.
  */
 export async function renderAnimations(
   animations: GeneratedAnimation[],
@@ -45,7 +44,6 @@ export async function renderAnimations(
       });
     } catch (err) {
       console.error(`[Remotion] Failed to render animation ${i}:`, err);
-      // Graceful degradation — skip this animation
     }
   }
 
@@ -64,15 +62,13 @@ async function renderSingleAnimation(
   await fs.mkdir(animDir, { recursive: true });
 
   const durationInFrames = Math.max(30, Math.round(animation.duration_s * fps));
-  const outputPath = path.join(outputDir, `animation-${String(index + 1).padStart(2, "0")}.mp4`);
+  const outputPath = path.join(outputDir, `animation-${String(index + 1).padStart(2, "0")}.webm`);
 
   // Write the generated component
-  const componentPath = path.join(animDir, "Component.tsx");
-  await fs.writeFile(componentPath, animation.component_code, "utf-8");
+  await fs.writeFile(path.join(animDir, "Component.tsx"), animation.component_code, "utf-8");
 
-  // Write the Remotion entry point that imports the generated component
-  const entryPath = path.join(animDir, "index.tsx");
-  await fs.writeFile(entryPath, `
+  // Write entry point
+  await fs.writeFile(path.join(animDir, "index.tsx"), `
 import { registerRoot, Composition } from "remotion";
 import AnimComponent from "./Component";
 
@@ -90,7 +86,7 @@ const Root = () => (
 registerRoot(Root);
 `, "utf-8");
 
-  // Write tsconfig for compilation
+  // Write tsconfig
   await fs.writeFile(
     path.join(animDir, "tsconfig.json"),
     JSON.stringify({
@@ -110,24 +106,25 @@ registerRoot(Root);
 
   console.log(`[Remotion] Bundling animation ${index + 1}...`);
 
-  // Bundle with Remotion's webpack bundler
   const bundleLocation = await bundle({
-    entryPoint: entryPath,
+    entryPoint: path.join(animDir, "index.tsx"),
     webpackOverride: (config) => config,
   });
 
-  console.log(`[Remotion] Rendering animation ${index + 1} (${durationInFrames} frames)...`);
+  console.log(`[Remotion] Rendering animation ${index + 1} (${durationInFrames} frames, transparent WebM)...`);
 
-  // Select the composition and render
   const composition = await selectComposition({
     serveUrl: bundleLocation,
     id: "DynamicAnimation",
   });
 
+  // Render as transparent WebM (VP9 with alpha)
   await renderMedia({
     composition: { ...composition, durationInFrames, fps, width, height },
     serveUrl: bundleLocation,
-    codec: "h264",
+    codec: "vp9",
+    imageFormat: "png",
+    pixelFormat: "yuva420p",
     outputLocation: outputPath,
   });
 

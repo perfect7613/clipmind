@@ -64,6 +64,8 @@ export const jobs = pgTable("jobs", {
   errorMessage: text("error_message"),
   videoUrls: jsonb("video_urls"),
   resultUrls: jsonb("result_urls"),
+  presetId: varchar("preset_id", { length: 50 }),
+  highlightReelUrl: varchar("highlight_reel_url", { length: 512 }),
   creditsConsumed: real("credits_consumed").default(0),
   startedAt: timestamp("started_at", { withTimezone: true }),
   completedAt: timestamp("completed_at", { withTimezone: true }),
@@ -84,6 +86,18 @@ export const clips = pgTable("clips", {
   why: text("why"),
   scores: jsonb("scores"),
   renderUrl: varchar("render_url", { length: 512 }),
+  thumbnailsDir: varchar("thumbnails_dir", { length: 512 }),
+  timelineData: jsonb("timeline_data"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+// ── Filmmaker Presets ────────────────────────────────────────────────────────────
+export const filmmakerPresets = pgTable("filmmaker_presets", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  name: varchar("name", { length: 256 }).notNull(),
+  description: text("description"),
+  skillContent: text("skill_content").notNull(),
+  category: varchar("category", { length: 20 }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 });
 

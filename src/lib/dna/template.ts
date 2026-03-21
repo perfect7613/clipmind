@@ -39,6 +39,11 @@ export function generateDnaSkillContent(params: {
     removeFillers: boolean;
     fillerWords: string[];
   };
+  speedRamp: {
+    intensity: string;
+    slowMoFactor: number;
+    speedUpFactor: number;
+  };
   animationDensity: string;
   contentType: string;
   humorType: string;
@@ -79,6 +84,13 @@ When this creator emphasizes a point, use punched-in zoom (~130%). For emotional
 ## Color Profile
 
 - Profile: ${params.color.profile}
+- Vignette: true
+- Vignette intensity: 0.3
+- Film grain: ${params.color.profile === "cinematic" ? "true" : "false"}
+- Film grain intensity: 0.1
+- Sharpen: false
+- Fade in: true
+- Fade out: true
 
 ## Brand System
 
@@ -96,6 +108,18 @@ When this creator emphasizes a point, use punched-in zoom (~130%). For emotional
 - Silence tolerance: ${params.pacing.silenceToleranceMs}ms
 - Remove fillers: ${params.pacing.removeFillers}
 - Filler words: ${params.pacing.fillerWords.join(", ")}
+
+## Speed Ramping
+
+- Intensity: ${params.speedRamp.intensity}
+- Slow-mo factor: ${params.speedRamp.slowMoFactor}x
+- Speed-up factor: ${params.speedRamp.speedUpFactor}x
+
+## Transitions
+
+- Type: cross-dissolve
+- Duration: 0.5s
+- Between clips: cross-dissolve
 
 ## Animation Density
 

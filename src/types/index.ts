@@ -4,11 +4,14 @@ export type JobStatus = "pending" | "processing" | "completed" | "failed";
 export type AudioStyle = "podcast_warm" | "youtube_standard" | "educational_clear" | "vlog_punchy";
 export type ColorProfile = "warm" | "neutral" | "cool" | "cinematic" | "flat";
 
+export type PresetCategory = "cinematic" | "social" | "classic";
+
 export interface EditJobPayload {
   videoUrls: string[];
   dnaProfileId: string;
   platform: Platform;
   clipCount: number;
+  presetId?: string;
   skipAnimations?: boolean;
   skipBroll?: boolean;
 }

@@ -1,6 +1,7 @@
 import { extractAudio } from "@/lib/ffmpeg/extract";
 import { getSarvamClient } from "@/lib/sarvam/client";
 import { loadDnaSkillToFilesystem, cleanupDnaSkill, getDnaProfile } from "@/lib/dna/loader";
+import { getPreset } from "@/lib/presets/filmmaker-presets";
 import { analyzeAndScore } from "./context-scorer";
 import { selectClips } from "./clip-selector";
 import { renderClip } from "./render-agent-1";
@@ -11,6 +12,10 @@ import { generatePhraseCaptions, writeCaptionFile } from "./caption-writer";
 import { matchBroll } from "./broll-matcher";
 import { renderFinal } from "./render-agent-3";
 import { syncCameras } from "./multicam-sync";
+import { extractThumbnails, extractAudioForWaveform } from "./thumbnail-extractor";
+import { stitchHighlightReel } from "./highlight-stitcher";
+import { planSpeedRamps, getSpeedRampConfig } from "./speed-ramp";
+import { getDefaultTransition } from "./transition-engine";
 import { promises as fs } from "fs";
 import path from "path";
 import os from "os";
@@ -26,7 +31,10 @@ export interface PipelineResult {
     mood: string;
     scores: Record<string, number>;
     render_url: string;
+    thumbnails_dir?: string;
+    timeline_data?: Record<string, unknown>;
   }[];
+  highlightReelUrl?: string;
 }
 
 /**
@@ -42,13 +50,25 @@ export async function runPipeline(
   await fs.mkdir(workDir, { recursive: true });
 
   try {
-    // Load DNA skill
+    // Load DNA skill (preset overrides DNA profile if provided)
     onProgress?.("loading_dna", 2);
-    const dnaProfile = await getDnaProfile(payload.dnaProfileId);
-    if (!dnaProfile) throw new Error("DNA profile not found");
+    let dnaContent: string;
 
-    const dnaContent = dnaProfile.skillContent;
-    await loadDnaSkillToFilesystem(payload.dnaProfileId, workDir);
+    if (payload.presetId) {
+      const preset = getPreset(payload.presetId);
+      if (!preset) throw new Error(`Filmmaker preset '${payload.presetId}' not found`);
+      dnaContent = preset.skillContent;
+
+      // Write preset skill content to filesystem for agent discovery
+      const skillDir = path.join(workDir, ".claude/skills/creator-dna");
+      await fs.mkdir(skillDir, { recursive: true });
+      await fs.writeFile(path.join(skillDir, "SKILL.md"), dnaContent, "utf-8");
+    } else {
+      const dnaProfile = await getDnaProfile(payload.dnaProfileId);
+      if (!dnaProfile) throw new Error("DNA profile not found");
+      dnaContent = dnaProfile.skillContent;
+      await loadDnaSkillToFilesystem(payload.dnaProfileId, workDir);
+    }
 
     // ═══════════════════════════════════════════════════
     // SKILL 1: video-edit
@@ -105,7 +125,16 @@ export async function runPipeline(
       const clip = clips[i];
       const clipPctBase = 40 + Math.round((i / clips.length) * 50);
 
-      // ── Skill 1: Render edited clip ──
+      // Build clip-relative word timestamps (needed by both Skill 1 and Skill 2)
+      const clipWords = transcript.words
+        .filter((w) => w.start_s >= clip.start_s && w.end_s <= clip.end_s)
+        .map((w) => ({
+          ...w,
+          start_s: w.start_s - clip.start_s,
+          end_s: w.end_s - clip.start_s,
+        }));
+
+      // ── Skill 1: Render edited clip (FFmpeg: zoom, color, grain, vignette, audio) ──
       onProgress?.(`rendering_clip_${i + 1}`, clipPctBase);
       console.log(`[Pipeline] Rendering clip ${i + 1}: ${clip.title} (${clip.start_s}s → ${clip.end_s}s)`);
 
@@ -116,30 +145,39 @@ export async function runPipeline(
           clip,
           workDir,
           i,
-          { colorProfile, audioProfile: audioStyle }
+          {
+            colorProfile,
+            audioProfile: audioStyle,
+            dnaContent,
+            clipWords,
+          }
         );
       } catch (err) {
         console.error(`[Pipeline] Clip ${i + 1} render failed, skipping:`, err);
         continue;
       }
 
-      // Build clip-relative word timestamps
-      const clipWords = transcript.words
-        .filter((w) => w.start_s >= clip.start_s && w.end_s <= clip.end_s)
-        .map((w) => ({
-          ...w,
-          start_s: w.start_s - clip.start_s,
-          end_s: w.end_s - clip.start_s,
-        }));
-
-      // ── Skill 2: Animations (skip if requested or no Remotion) ──
+      // ── Skill 2: Moment detection → drives zoom, speed, and optional Remotion overlays ──
       let renderedAnimations: Awaited<ReturnType<typeof renderAnimations>> = [];
+      let detectedMoments: Awaited<ReturnType<typeof detectShowMoments>> = [];
+      let speedRampEvents: ReturnType<typeof planSpeedRamps> = [];
 
       if (!payload.skipAnimations) {
-        onProgress?.(`animating_clip_${i + 1}`, clipPctBase + 5);
+        onProgress?.(`analyzing_moments_${i + 1}`, clipPctBase + 3);
         try {
-          const moments = await detectShowMoments(clipWords, clip.duration_s);
-          if (moments.length > 0) {
+          detectedMoments = await detectShowMoments(clipWords, clip.duration_s, dnaContent);
+          console.log(`[Pipeline] Detected ${detectedMoments.length} moments for clip ${i + 1}`);
+
+          // Plan speed ramps from detected moments
+          const speedConfig = getSpeedRampConfig(dnaContent);
+          if (speedConfig.intensity !== "none") {
+            speedRampEvents = planSpeedRamps(detectedMoments, clip.duration_s, speedConfig);
+            console.log(`[Pipeline] Planned ${speedRampEvents.length} speed ramps for clip ${i + 1}`);
+          }
+
+          // Optional Remotion text overlays (only if moments call for them)
+          if (detectedMoments.length > 0) {
+            onProgress?.(`animating_clip_${i + 1}`, clipPctBase + 5);
             const brand = {
               headingFont: extractDnaValue(dnaContent, "Heading font:", "DM Serif Display"),
               bodyFont: extractDnaValue(dnaContent, "Body font:", "DM Sans"),
@@ -148,15 +186,19 @@ export async function runPipeline(
               animationStyle: extractDnaValue(dnaContent, "Animation style:", "slide-up"),
               darkModeDefault: dnaContent.includes("Dark mode default: true"),
             };
-            const generated = await generateAnimations(moments, brand, dnaContent);
-            renderedAnimations = await renderAnimations(generated);
+            try {
+              const generated = await generateAnimations(detectedMoments, brand, dnaContent);
+              renderedAnimations = await renderAnimations(generated);
+            } catch (animErr) {
+              console.error(`[Pipeline] Remotion overlay failed for clip ${i + 1}, skipping:`, animErr);
+            }
           }
         } catch (err) {
-          console.error(`[Pipeline] Animation failed for clip ${i + 1}, skipping:`, err);
+          console.error(`[Pipeline] Moment detection failed for clip ${i + 1}, skipping:`, err);
         }
       }
 
-      // ── Skill 3: Finalize (captions + B-roll + overlays) ──
+      // ── Skill 3: Finalize via FFmpeg (overlay animations + captions + B-roll) ──
       onProgress?.(`finalizing_clip_${i + 1}`, clipPctBase + 10);
 
       // Generate captions
@@ -185,7 +227,7 @@ export async function runPipeline(
         }
       }
 
-      // Final render (only if we have captions, animations, or B-roll to add)
+      // Final render
       let finalPath = editedPath;
       if (captionPath || renderedAnimations.length > 0 || brollInsertions.length > 0) {
         try {
@@ -198,14 +240,22 @@ export async function runPipeline(
           );
         } catch (err) {
           console.error(`[Pipeline] Final render failed for clip ${i + 1}, using edited version:`, err);
-          // Use the Skill 1 output as-is
         }
       }
 
-      // Copy to final output location
-      const outputPath = path.join(workDir, `final-clip-${i + 1}.mp4`);
-      if (finalPath !== outputPath) {
-        await fs.copyFile(finalPath, outputPath);
+      // Copy to persistent output location (survives tmp cleanup)
+      const persistDir = path.join(os.tmpdir(), "clipmind-outputs");
+      await fs.mkdir(persistDir, { recursive: true });
+      const outputPath = path.join(persistDir, `${path.basename(workDir)}-clip-${i + 1}.mp4`);
+      await fs.copyFile(finalPath, outputPath);
+
+      // Extract thumbnails + audio for timeline editor
+      let thumbnailsDir: string | undefined;
+      try {
+        thumbnailsDir = await extractThumbnails(outputPath, persistDir);
+        await extractAudioForWaveform(outputPath, persistDir);
+      } catch (err) {
+        console.error(`[Pipeline] Thumbnail/audio extraction failed for clip ${i + 1}:`, err);
       }
 
       clipResults.push({
@@ -215,6 +265,19 @@ export async function runPipeline(
         mood: clip.mood,
         scores: clip.scores,
         render_url: outputPath,
+        thumbnails_dir: thumbnailsDir,
+        timeline_data: {
+          cutPoints: [{ start_s: 0, end_s: clip.duration_s }],
+          effects: { colorProfile, audioProfile: audioStyle },
+          zoomEvents: [],
+          speedRamps: speedRampEvents.map((e) => ({
+            start_s: e.start_s, end_s: e.end_s, factor: e.factor, reason: e.reason,
+          })),
+          moments: detectedMoments.map((m) => ({
+            timestamp_s: m.timestamp_s, duration_s: m.duration_s,
+            type: m.suggested_type, content: m.content,
+          })),
+        },
       });
 
       console.log(`[Pipeline] Clip ${i + 1} complete: ${outputPath}`);
@@ -224,8 +287,25 @@ export async function runPipeline(
       throw new Error("All clip renders failed");
     }
 
+    // ── Stitch highlight reel (all clips with transitions) ──
+    let highlightReelUrl: string | undefined;
+    if (clipResults.length > 1) {
+      onProgress?.("stitching_highlight_reel", 95);
+      try {
+        const transitionConfig = getDefaultTransition(dnaContent);
+        highlightReelUrl = await stitchHighlightReel(
+          clipResults.map((c) => c.render_url),
+          transitionConfig.type,
+          transitionConfig.durationS
+        );
+        console.log(`[Pipeline] Highlight reel: ${highlightReelUrl}`);
+      } catch (err) {
+        console.error("[Pipeline] Highlight reel failed:", err);
+      }
+    }
+
     onProgress?.("completed", 100);
-    return { clips: clipResults };
+    return { clips: clipResults, highlightReelUrl };
   } finally {
     await cleanupDnaSkill(workDir);
   }
