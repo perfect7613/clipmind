@@ -162,7 +162,9 @@ function averageScores(segments: ScoredSegment[]): SelectedClip["scores"] {
 }
 
 function removeOverlaps(clips: SelectedClip[], maxOverlap: number): SelectedClip[] {
-  const sorted = [...clips].sort((a, b) => a.start_s - b.start_s);
+  if (clips.length === 0) return [];
+  const sorted = clips.filter(Boolean).sort((a, b) => a.start_s - b.start_s);
+  if (sorted.length === 0) return [];
   const result: SelectedClip[] = [sorted[0]];
 
   for (let i = 1; i < sorted.length; i++) {

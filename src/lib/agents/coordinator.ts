@@ -122,15 +122,17 @@ export async function runPipeline(
     onProgress?.("rendering", 40);
     const clipResults: PipelineResult["clips"] = [];
 
-    for (let i = 0; i < clips.length; i++) {
-      const clip = clips[i];
-      const clipPctBase = 40 + Math.round((i / clips.length) * 50);
+    // Filter out any invalid clips before processing
+    const validClips = clips.filter((c) => c && typeof c.start_s === "number" && typeof c.end_s === "number" && c.end_s > c.start_s);
+    console.log(`[Pipeline] ${validClips.length} valid clips out of ${clips.length} selected`);
 
-      // Skip clips with missing timestamps
-      if (typeof clip.start_s !== "number" || typeof clip.end_s !== "number") {
-        console.error(`[Pipeline] Clip ${i + 1} missing timestamps, skipping`);
-        continue;
-      }
+    if (validClips.length === 0) {
+      throw new Error("No valid clips with timestamps found");
+    }
+
+    for (let i = 0; i < validClips.length; i++) {
+      const clip = validClips[i];
+      const clipPctBase = 40 + Math.round((i / validClips.length) * 50);
 
       // Build clip-relative word timestamps (needed by both Skill 1 and Skill 2)
       const clipWords = transcript.words
