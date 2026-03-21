@@ -76,10 +76,11 @@ export async function POST(request: NextRequest) {
         });
       }
     }).catch(async (err) => {
+      console.error("Pipeline failed:", err);
       await db.update(jobs).set({
         status: "failed",
         currentStep: "failed",
-        errorMessage: err.message,
+        errorMessage: err.message || String(err),
         completedAt: new Date(),
       }).where(eq(jobs.id, job.id));
     });

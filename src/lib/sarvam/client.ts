@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { promises as fs } from "fs";
 
 const SARVAM_API_URL = "https://api.sarvam.ai";
 
@@ -29,131 +30,159 @@ export class SarvamClient {
     }
   }
 
-  private async request(endpoint: string, options: RequestInit = {}) {
-    const res = await fetch(`${SARVAM_API_URL}${endpoint}`, {
-      ...options,
-      headers: {
-        "api-subscription-key": this.apiKey,
-        ...options.headers,
-      },
-    });
+  /**
+   * Transcribe audio using Sarvam REST API (POST /speech-to-text).
+   * Accepts either a Buffer or a file path.
+   * Max 30 seconds per request — for longer files, chunks automatically.
+   */
+  async transcribe(
+    audioInput: Buffer | string,
+    filename: string = "audio.wav"
+  ): Promise<TranscriptResult> {
+    let audioBuffer: Buffer;
 
-    if (!res.ok) {
-      const error = await res.text();
-      throw new Error(`Sarvam API error (${res.status}): ${error}`);
+    if (typeof audioInput === "string") {
+      // It's a file path
+      audioBuffer = await fs.readFile(audioInput);
+    } else {
+      audioBuffer = audioInput;
     }
 
-    return res.json();
-  }
-
-  // Step 1: Initiate a batch transcription job
-  async initiateJob(): Promise<{ job_id: string; upload_url: string }> {
-    return this.request("/speech-to-text/batch/initiate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "saaras:v3",
-        with_timestamps: true,
-        with_word_timestamps: true,
-      }),
-    });
-  }
-
-  // Step 2: Upload audio file to the job
-  async uploadFile(uploadUrl: string, audioBuffer: Buffer, filename: string): Promise<void> {
+    // Sarvam REST API: single POST with multipart form data
     const formData = new FormData();
     const blob = new Blob([new Uint8Array(audioBuffer)], { type: "audio/wav" });
     formData.append("file", blob, filename);
+    formData.append("model", "saaras:v3");
+    formData.append("language_code", "en-IN");
 
-    const res = await fetch(uploadUrl, {
-      method: "PUT",
+    const res = await fetch(`${SARVAM_API_URL}/speech-to-text`, {
+      method: "POST",
+      headers: {
+        "api-subscription-key": this.apiKey,
+      },
       body: formData,
     });
 
     if (!res.ok) {
-      throw new Error(`Upload failed (${res.status}): ${await res.text()}`);
+      const errorText = await res.text();
+      throw new Error(`Sarvam API error (${res.status}): ${errorText}`);
     }
+
+    const rawResult = await res.json();
+    return this.parseResult(rawResult);
   }
 
-  // Step 3: Start the batch job
-  async startJob(jobId: string): Promise<void> {
-    await this.request(`/speech-to-text/batch/${jobId}/start`, {
-      method: "POST",
+  /**
+   * Transcribe a long audio file by chunking into 25-second segments.
+   */
+  async transcribeLong(
+    audioPath: string,
+    totalDurationS: number
+  ): Promise<TranscriptResult> {
+    const ffmpeg = (await import("fluent-ffmpeg")).default;
+    const path = await import("path");
+    const os = await import("os");
+
+    const chunkDuration = 25; // seconds — under 30s limit
+    const chunks = Math.ceil(totalDurationS / chunkDuration);
+    const allWords: WordTimestamp[] = [];
+    let fullTranscript = "";
+
+    const tmpDir = path.join(os.tmpdir(), `clipmind-sarvam-${Date.now()}`);
+    await fs.mkdir(tmpDir, { recursive: true });
+
+    for (let i = 0; i < chunks; i++) {
+      const startS = i * chunkDuration;
+      const chunkPath = path.join(tmpDir, `chunk-${i}.wav`);
+
+      // Extract chunk with FFmpeg
+      await new Promise<void>((resolve, reject) => {
+        ffmpeg(audioPath)
+          .setStartTime(startS)
+          .duration(chunkDuration)
+          .audioFrequency(16000)
+          .audioChannels(1)
+          .audioCodec("pcm_s16le")
+          .output(chunkPath)
+          .on("end", () => resolve())
+          .on("error", (err: Error) => reject(err))
+          .run();
+      });
+
+      try {
+        const result = await this.transcribe(chunkPath, `chunk-${i}.wav`);
+
+        // Offset word timestamps by chunk start time
+        for (const word of result.words) {
+          allWords.push({
+            word: word.word,
+            start_s: word.start_s + startS,
+            end_s: word.end_s + startS,
+            confidence: word.confidence,
+          });
+        }
+
+        if (result.transcript) {
+          fullTranscript += (fullTranscript ? " " : "") + result.transcript;
+        }
+      } catch (err) {
+        console.error(`Chunk ${i} transcription failed:`, err);
+        // Continue with other chunks
+      }
+    }
+
+    // Cleanup
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+
+    return TranscriptResultSchema.parse({
+      transcript: fullTranscript,
+      words: allWords,
+      duration_s: totalDurationS,
     });
   }
 
-  // Step 4: Poll for job completion
-  async getJobStatus(jobId: string): Promise<{ status: string; result_url?: string }> {
-    return this.request(`/speech-to-text/batch/${jobId}/status`);
-  }
-
-  // Step 5: Download results
-  async downloadResults(resultUrl: string): Promise<any> {
-    const res = await fetch(resultUrl);
-    if (!res.ok) throw new Error(`Download failed: ${res.status}`);
-    return res.json();
-  }
-
-  // Full transcription pipeline with polling
-  async transcribe(audioBuffer: Buffer, filename: string = "audio.wav"): Promise<TranscriptResult> {
-    // Initiate
-    const { job_id, upload_url } = await this.initiateJob();
-
-    // Upload
-    await this.uploadFile(upload_url, audioBuffer, filename);
-
-    // Start
-    await this.startJob(job_id);
-
-    // Poll with exponential backoff
-    let delay = 2000;
-    const maxDelay = 30000;
-    const maxAttempts = 60;
-
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      await new Promise((resolve) => setTimeout(resolve, delay));
-
-      const status = await this.getJobStatus(job_id);
-
-      if (status.status === "completed" && status.result_url) {
-        const rawResult = await this.downloadResults(status.result_url);
-        return this.parseResult(rawResult);
-      }
-
-      if (status.status === "failed") {
-        throw new Error(`Transcription job ${job_id} failed`);
-      }
-
-      delay = Math.min(delay * 1.5, maxDelay);
-    }
-
-    throw new Error(`Transcription job ${job_id} timed out after ${maxAttempts} attempts`);
-  }
-
-  // Parse Sarvam response into our standard format
   private parseResult(rawResult: any): TranscriptResult {
     const words: WordTimestamp[] = [];
     let fullTranscript = "";
 
-    // Parse word-level timestamps from Sarvam response
-    if (rawResult.words) {
-      for (const w of rawResult.words) {
+    // Sarvam returns { transcript, timestamps: [{start, end, word}] } or similar
+    if (rawResult.timestamps) {
+      for (const w of rawResult.timestamps) {
         words.push({
-          word: w.word || w.text,
-          start_s: w.start || w.start_time,
-          end_s: w.end || w.end_time,
+          word: w.word || w.text || "",
+          start_s: w.start ?? w.start_time ?? 0,
+          end_s: w.end ?? w.end_time ?? 0,
           confidence: w.confidence,
         });
       }
-      fullTranscript = words.map((w) => w.word).join(" ");
-    } else if (rawResult.transcript) {
-      fullTranscript = rawResult.transcript;
+    } else if (rawResult.words) {
+      for (const w of rawResult.words) {
+        words.push({
+          word: w.word || w.text || "",
+          start_s: w.start ?? w.start_time ?? 0,
+          end_s: w.end ?? w.end_time ?? 0,
+          confidence: w.confidence,
+        });
+      }
+    }
+
+    fullTranscript = rawResult.transcript || words.map((w) => w.word).join(" ");
+
+    // If no word timestamps, create approximate ones from transcript
+    if (words.length === 0 && fullTranscript) {
+      const wordsArr = fullTranscript.split(/\s+/);
+      const avgWordDuration = 0.4; // rough estimate
+      wordsArr.forEach((word, i) => {
+        words.push({
+          word,
+          start_s: i * avgWordDuration,
+          end_s: (i + 1) * avgWordDuration,
+        });
+      });
     }
 
     const duration_s =
-      words.length > 0
-        ? words[words.length - 1].end_s
-        : rawResult.duration || 0;
+      words.length > 0 ? words[words.length - 1].end_s : rawResult.duration || 0;
 
     return TranscriptResultSchema.parse({
       transcript: fullTranscript,

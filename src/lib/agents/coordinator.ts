@@ -73,9 +73,11 @@ export async function runPipeline(
     // Ingest + Transcribe
     onProgress?.("transcribing", 10);
     const { audioPath, duration_s } = await extractAudio(payload.videoUrls[0], workDir);
-    const audioBuffer = await fs.readFile(audioPath);
     const sarvam = getSarvamClient();
-    const transcript: TranscriptResult = await sarvam.transcribe(audioBuffer);
+    // Use chunked transcription for longer audio (Sarvam REST API max 30s per request)
+    const transcript: TranscriptResult = duration_s > 25
+      ? await sarvam.transcribeLong(audioPath, duration_s)
+      : await sarvam.transcribe(audioPath);
 
     // Context analysis + scoring
     onProgress?.("analyzing", 20);
