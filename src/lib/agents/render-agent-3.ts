@@ -41,26 +41,28 @@ export async function renderFinal(
   return new Promise((resolve, reject) => {
     let cmd = ffmpeg(editedVideoPath);
 
+    // Build output options
+    const outputOpts = [
+      "-c:v", "libx264",
+      "-crf", String(cfg.crf),
+      "-preset", "fast",
+      "-c:a", "aac",
+      "-b:a", cfg.audioBitrate,
+      "-movflags", "+faststart",
+      "-pix_fmt", "yuv420p",
+    ];
+
     // Burn in captions using the ASS subtitle filter
     if (captionAssPath) {
-      // ASS filter uses the subtitles filter which is simpler than filter_complex
+      // FFmpeg ass filter: escape colons and backslashes in path
       const escapedPath = captionAssPath
         .replace(/\\/g, "/")
-        .replace(/:/g, "\\:")
-        .replace(/'/g, "'\\''");
-      cmd = cmd.videoFilters(`ass='${escapedPath}'`);
+        .replace(/:/g, "\\\\:");
+      outputOpts.push("-vf", `ass=${escapedPath}`);
     }
 
     cmd
-      .outputOptions([
-        "-c:v", "libx264",
-        "-crf", String(cfg.crf),
-        "-preset", "fast",
-        "-c:a", "aac",
-        "-b:a", cfg.audioBitrate,
-        "-movflags", "+faststart",
-        "-pix_fmt", "yuv420p",
-      ])
+      .outputOptions(outputOpts)
       .output(outputPath)
       .on("start", (cmdLine) => {
         console.log("[RenderFinal] Command:", cmdLine);

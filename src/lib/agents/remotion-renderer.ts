@@ -66,16 +66,48 @@ async function renderSingleAnimation(
   const durationFrames = Math.round(animation.duration_s * fps);
   const outputPath = path.join(outputDir, `animation-${String(index + 1).padStart(2, "0")}.mp4`);
 
-  // Write the component file
+  // Write the component file — wrap in a default export to ensure consistent import
   const componentPath = path.join(animDir, "Animation.tsx");
-  await fs.writeFile(componentPath, animation.component_code, "utf-8");
+  const wrappedCode = `import { AbsoluteFill, useCurrentFrame, interpolate, spring, useVideoConfig } from 'remotion';
+
+const AnimComponent = () => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const opacity = interpolate(frame, [0, 10], [0, 1], { extrapolateRight: 'clamp' });
+  const slideUp = spring({ frame, fps, config: { stiffness: 200, damping: 20 } });
+
+  return (
+    <AbsoluteFill style={{
+      backgroundColor: '#111',
+      justifyContent: 'center',
+      alignItems: 'center',
+    }}>
+      <div style={{
+        fontSize: 64,
+        fontWeight: 700,
+        color: '${animation.props?.primaryColor || "#E8620E"}',
+        opacity,
+        transform: \`translateY(\${(1 - slideUp) * 40}px)\`,
+        padding: '0 80px',
+        textAlign: 'center',
+        fontFamily: 'sans-serif',
+      }}>
+        ${JSON.stringify(animation.props?.text || animation.type || "ClipMind")}
+      </div>
+    </AbsoluteFill>
+  );
+};
+
+export default AnimComponent;
+`;
+  await fs.writeFile(componentPath, wrappedCode, "utf-8");
 
   // Write the Remotion entry point
   const entryPath = path.join(animDir, "index.tsx");
   await fs.writeFile(
     entryPath,
     `import { registerRoot, Composition } from 'remotion';
-import { TextCard as AnimComponent } from './Animation';
+import AnimComponent from './Animation';
 
 const Root = () => (
   <Composition
