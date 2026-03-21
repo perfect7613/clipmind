@@ -110,12 +110,12 @@ Return a JSON array of clips. Return ONLY the JSON array.`,
     return fallbackSelection(segments, cfg);
   }
 
-  // Validate and enforce constraints
+  // Validate and enforce constraints — skip clips missing start_s/end_s
   const clips: SelectedClip[] = rawClips
     .slice(0, cfg.clipCount)
+    .filter((clip: any) => typeof clip.start_s === "number" && typeof clip.end_s === "number" && clip.end_s > clip.start_s)
     .map((clip: any, i: number) => {
       const duration = clip.end_s - clip.start_s;
-      // Merge scores from referenced segments
       const indices: number[] = clip.segment_indices || [0];
       const refSegments = indices
         .map((idx: number) => segments[idx])

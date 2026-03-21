@@ -126,6 +126,12 @@ export async function runPipeline(
       const clip = clips[i];
       const clipPctBase = 40 + Math.round((i / clips.length) * 50);
 
+      // Skip clips with missing timestamps
+      if (typeof clip.start_s !== "number" || typeof clip.end_s !== "number") {
+        console.error(`[Pipeline] Clip ${i + 1} missing timestamps, skipping`);
+        continue;
+      }
+
       // Build clip-relative word timestamps (needed by both Skill 1 and Skill 2)
       const clipWords = transcript.words
         .filter((w) => w.start_s >= clip.start_s && w.end_s <= clip.end_s)
