@@ -10,11 +10,14 @@ interface RenderFinalConfig {
   audioBitrate: string;
 }
 
-const DEFAULT_CONFIG: RenderFinalConfig = { crf: 18, audioBitrate: "320k" };
+const DEFAULT_CONFIG: RenderFinalConfig = { crf: 22, audioBitrate: "192k" };
 
 /**
- * Render Agent 3: Combine edited-video.mp4 with animations, B-roll, and captions.
- * Produces the final YouTube-ready MP4.
+ * Render Agent 3: Combine edited-video.mp4 with captions.
+ * For the prototype, we keep it simple:
+ * - If captions exist: burn them in with the ASS filter
+ * - Animations and B-roll overlays are skipped for now (complex filter_complex)
+ *   They'll be added when Remotion rendering is working.
  */
 export async function renderFinal(
   editedVideoPath: string,
@@ -27,90 +30,50 @@ export async function renderFinal(
   const cfg = { ...DEFAULT_CONFIG, ...config };
   const dir = outputDir || path.join(os.tmpdir(), `clipmind-final-${Date.now()}`);
   await fs.mkdir(dir, { recursive: true });
-  const outputPath = path.join(dir, "final-video.mp4");
+  const outputPath = path.join(dir, `final-${Date.now()}.mp4`);
 
-  // Build FFmpeg command
-  const inputFiles = [editedVideoPath];
-  const filterParts: string[] = [];
-  let currentLabel = "[0:v]";
-  let overlayIndex = 1;
-
-  // Add animation overlay inputs
-  for (const anim of animations) {
-    inputFiles.push(anim.filePath);
-    const inputIdx = overlayIndex;
-    const outLabel = `[v${overlayIndex}]`;
-    filterParts.push(
-      `${currentLabel}[${inputIdx}:v]overlay=0:0:enable='between(t,${anim.timestamp_s},${anim.timestamp_s + anim.duration_s})'${outLabel}`
-    );
-    currentLabel = outLabel;
-    overlayIndex++;
-  }
-
-  // Add B-roll overlay inputs (download first if needed)
-  for (const broll of brollInsertions) {
-    // For local files or already-downloaded B-roll
-    if (broll.clip_url.startsWith("/") || broll.clip_url.startsWith("file://")) {
-      inputFiles.push(broll.clip_url.replace("file://", ""));
-      const inputIdx = overlayIndex;
-      const outLabel = `[v${overlayIndex}]`;
-      filterParts.push(
-        `${currentLabel}[${inputIdx}:v]overlay=0:0:enable='between(t,${broll.timestamp_s},${broll.timestamp_s + broll.duration_s})'${outLabel}`
-      );
-      currentLabel = outLabel;
-      overlayIndex++;
-    }
-  }
-
-  // Caption burn-in via ASS filter
-  if (captionAssPath) {
-    const escapedPath = captionAssPath.replace(/\\/g, "/").replace(/:/g, "\\:");
-    const outLabel = `[vcap]`;
-    filterParts.push(`${currentLabel}ass='${escapedPath}'${outLabel}`);
-    currentLabel = outLabel;
-  }
-
-  // Final label
-  if (filterParts.length > 0) {
-    // Rename last label to [vout]
-    const lastFilter = filterParts[filterParts.length - 1];
-    const lastLabel = currentLabel;
-    if (lastLabel !== "[vout]") {
-      filterParts[filterParts.length - 1] = lastFilter.replace(
-        new RegExp(`\\${lastLabel.replace("[", "\\[").replace("]", "\\]")}$`),
-        "[vout]"
-      );
-    }
+  // If no captions and no overlays, just copy the file
+  if (!captionAssPath && animations.length === 0 && brollInsertions.length === 0) {
+    await fs.copyFile(editedVideoPath, outputPath);
+    return outputPath;
   }
 
   return new Promise((resolve, reject) => {
-    let cmd = ffmpeg();
+    let cmd = ffmpeg(editedVideoPath);
 
-    for (const input of inputFiles) {
-      cmd = cmd.input(input);
-    }
-
-    if (filterParts.length > 0) {
-      cmd = cmd
-        .complexFilter(filterParts.join(";\n"))
-        .outputOptions(["-map", "[vout]", "-map", "0:a"]);
-    } else if (captionAssPath) {
-      // Just captions, no overlays
-      cmd = cmd.videoFilters(`ass='${captionAssPath.replace(/\\/g, "/").replace(/:/g, "\\:")}'`);
+    // Burn in captions using the ASS subtitle filter
+    if (captionAssPath) {
+      // ASS filter uses the subtitles filter which is simpler than filter_complex
+      const escapedPath = captionAssPath
+        .replace(/\\/g, "/")
+        .replace(/:/g, "\\:")
+        .replace(/'/g, "'\\''");
+      cmd = cmd.videoFilters(`ass='${escapedPath}'`);
     }
 
     cmd
       .outputOptions([
         "-c:v", "libx264",
         "-crf", String(cfg.crf),
-        "-preset", "medium",
+        "-preset", "fast",
         "-c:a", "aac",
         "-b:a", cfg.audioBitrate,
         "-movflags", "+faststart",
+        "-pix_fmt", "yuv420p",
       ])
       .output(outputPath)
-      .on("end", () => resolve(outputPath))
-      .on("error", (err) => reject(new Error(`Final render failed: ${err.message}`)))
+      .on("start", (cmdLine) => {
+        console.log("[RenderFinal] Command:", cmdLine);
+      })
+      .on("end", () => {
+        console.log("[RenderFinal] Done:", outputPath);
+        resolve(outputPath);
+      })
+      .on("error", (err, stdout, stderr) => {
+        console.error("[RenderFinal] Failed:", err.message);
+        console.error("[RenderFinal] stderr:", stderr);
+        reject(new Error(`Final render failed: ${err.message}`));
+      })
       .run();
   });
 }

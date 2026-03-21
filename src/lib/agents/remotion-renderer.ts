@@ -111,18 +111,22 @@ registerRoot(Root);
     "utf-8"
   );
 
-  // Render via Remotion CLI
+  // Render via Remotion CLI — use the project's node_modules binary
+  const projectRoot = path.resolve(process.cwd());
+  const remotionBin = path.join(projectRoot, "node_modules", ".bin", "remotion");
+
   try {
-    await execFileAsync("npx", [
-      "remotion", "render",
+    await execFileAsync(remotionBin, [
+      "render",
       entryPath,
       "Animation",
       outputPath,
       "--codec", "h264",
       "--crf", "18",
     ], {
-      timeout: 60000,
+      timeout: 120000,
       cwd: animDir,
+      env: { ...process.env, NODE_PATH: path.join(projectRoot, "node_modules") },
     });
   } catch (err: any) {
     throw new Error(`Remotion render failed: ${err.stderr || err.message}`);
