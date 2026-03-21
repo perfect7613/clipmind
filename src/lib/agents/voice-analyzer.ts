@@ -31,7 +31,7 @@ export async function analyzeVoice(transcript: string): Promise<VoiceAnalysis> {
   const truncated = transcript.length > 5000 ? transcript.slice(0, 5000) : transcript;
 
   const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-5-20250929",
+    model: "claude-sonnet-4-6",
     max_tokens: 2000,
     messages: [
       {
