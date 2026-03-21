@@ -5,35 +5,35 @@ import type { FrameSample } from "./frame-sampler";
 
 const anthropic = new Anthropic();
 
-// Output schema
+// Output schema — lenient to handle Claude's varied responses
 export const VisualAnalysisSchema = z.object({
   captionStyle: z.object({
-    detected: z.boolean(),
-    casing: z.enum(["upper", "lower", "title", "sentence"]).optional(),
-    position: z.enum(["top", "middle", "bottom", "dynamic"]).optional(),
-    background: z.enum(["none", "dark-bar", "pill", "full-width"]).optional(),
-    fontSize: z.enum(["small", "medium", "large"]).optional(),
-    animation: z.enum(["none", "pop", "slide", "bounce", "typewriter"]).optional(),
-    colorHex: z.string().optional(),
-  }),
-  colorTemperature: z.enum(["warm", "neutral", "cool", "cinematic", "flat"]),
+    detected: z.boolean().catch(false),
+    casing: z.enum(["upper", "lower", "title", "sentence"]).nullable().optional().catch(null),
+    position: z.enum(["top", "middle", "bottom", "dynamic"]).nullable().optional().catch(null),
+    background: z.enum(["none", "dark-bar", "pill", "full-width"]).nullable().optional().catch(null),
+    fontSize: z.enum(["small", "medium", "large"]).nullable().optional().catch(null),
+    animation: z.enum(["none", "pop", "slide", "bounce", "typewriter"]).nullable().optional().catch(null),
+    colorHex: z.string().nullable().optional().catch(null),
+  }).catch({ detected: false, casing: null, position: null, background: null, fontSize: null, animation: null, colorHex: null }),
+  colorTemperature: z.enum(["warm", "neutral", "cool", "cinematic", "flat"]).catch("neutral"),
   zoomPatterns: z.object({
-    levelsDetected: z.number().min(1).max(5),
-    style: z.enum(["instant", "gradual", "mixed"]),
-    frequency: z.enum(["none", "low", "medium", "high"]),
-  }),
+    levelsDetected: z.number().min(1).max(5).catch(1),
+    style: z.enum(["instant", "gradual", "mixed"]).catch("instant"),
+    frequency: z.enum(["none", "low", "medium", "high"]).catch("low"),
+  }).catch({ levelsDetected: 1, style: "instant" as const, frequency: "low" as const }),
   textOverlays: z.object({
-    detected: z.boolean(),
-    frequency: z.enum(["none", "light", "moderate", "heavy"]),
-    style: z.string().optional(),
-  }),
+    detected: z.boolean().catch(false),
+    frequency: z.enum(["none", "light", "moderate", "heavy"]).catch("none"),
+    style: z.string().nullable().optional().catch(null),
+  }).catch({ detected: false, frequency: "none" as const, style: null }),
   brollPresence: z.object({
-    detected: z.boolean(),
-    estimatedPercentage: z.number().min(0).max(100),
-    types: z.array(z.string()),
-  }),
-  productionQuality: z.enum(["amateur", "semi-pro", "professional", "high-end"]),
-  overallStyle: z.string(),
+    detected: z.boolean().catch(false),
+    estimatedPercentage: z.number().min(0).max(100).catch(0),
+    types: z.array(z.string()).catch([]),
+  }).catch({ detected: false, estimatedPercentage: 0, types: [] }),
+  productionQuality: z.enum(["amateur", "semi-pro", "professional", "high-end"]).catch("semi-pro"),
+  overallStyle: z.string().catch("Standard video style"),
 });
 
 export type VisualAnalysis = z.infer<typeof VisualAnalysisSchema>;
@@ -136,8 +136,21 @@ Return ONLY the JSON object, no markdown formatting or explanation.`,
     jsonStr = jsonStr.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
   }
 
-  const parsed = JSON.parse(jsonStr);
-  return VisualAnalysisSchema.parse(parsed);
+  try {
+    const parsed = JSON.parse(jsonStr);
+    return VisualAnalysisSchema.parse(parsed);
+  } catch {
+    // Return safe defaults if parsing fails
+    return {
+      captionStyle: { detected: false, casing: null, position: null, background: null, fontSize: null, animation: null, colorHex: null },
+      colorTemperature: "neutral" as const,
+      zoomPatterns: { levelsDetected: 1, style: "instant" as const, frequency: "low" as const },
+      textOverlays: { detected: false, frequency: "none" as const, style: null },
+      brollPresence: { detected: false, estimatedPercentage: 0, types: [] },
+      productionQuality: "semi-pro" as const,
+      overallStyle: "Could not analyze visual style",
+    };
+  }
 }
 
 /**
