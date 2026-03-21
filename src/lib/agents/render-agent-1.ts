@@ -5,14 +5,6 @@ import { promises as fs } from "fs";
 import type { SelectedClip } from "./clip-selector";
 import { buildColorFilterChain, type ColorProfile } from "./color-correction";
 import { buildAudioFilterChain, type AudioProfile } from "./audio-mastering";
-import type { ZoomEvent } from "./zoom-planner";
-
-interface RenderSegment {
-  start_s: number;
-  end_s: number;
-  sourceIndex: number;        // 0 or 1 for multi-cam
-  zoom?: { crop: string; scale: string };
-}
 
 interface RenderConfig {
   colorProfile: ColorProfile;
@@ -29,135 +21,120 @@ const DEFAULT_RENDER_CONFIG: RenderConfig = {
   outputWidth: 1920,
   outputHeight: 1080,
   fps: 30,
-  crf: 18,
+  crf: 22,
 };
 
 /**
- * Build and execute the FFmpeg filter_complex for Skill 1.
- * Compiles all operations (trim, zoom, color, audio) into one render pass.
+ * Render a single clip from the source video.
+ * Uses -ss/-to for reliable seeking, then applies color + audio filters.
+ * This is the simple, robust approach — one clip at a time.
  */
-export async function renderSkill1(
-  inputPaths: string[],
-  segments: RenderSegment[],
-  outputDir?: string,
+export async function renderClip(
+  inputPath: string,
+  clip: SelectedClip,
+  outputDir: string,
+  clipIndex: number,
   config: Partial<RenderConfig> = {}
 ): Promise<string> {
   const cfg = { ...DEFAULT_RENDER_CONFIG, ...config };
-  const dir = outputDir || path.join(os.tmpdir(), `clipmind-render-${Date.now()}`);
-  await fs.mkdir(dir, { recursive: true });
-  const outputPath = path.join(dir, "edited-video.mp4");
+  await fs.mkdir(outputDir, { recursive: true });
+  const outputPath = path.join(outputDir, `edited-clip-${clipIndex + 1}.mp4`);
 
   const colorFilter = buildColorFilterChain(cfg.colorProfile);
   const audioFilter = buildAudioFilterChain({ style: cfg.audioProfile });
 
-  // Build filter_complex
-  const filterParts: string[] = [];
-  const videoLabels: string[] = [];
-  const audioLabels: string[] = [];
-
-  segments.forEach((seg, i) => {
-    const src = seg.sourceIndex;
-    const trim = `trim=start=${seg.start_s.toFixed(3)}:end=${seg.end_s.toFixed(3)},setpts=PTS-STARTPTS`;
-    const atrim = `atrim=start=${seg.start_s.toFixed(3)}:end=${seg.end_s.toFixed(3)},asetpts=PTS-STARTPTS`;
-
-    // Video: trim → zoom/crop → color → scale → fps
-    let videoChain = `[${src}:v]${trim}`;
-    if (seg.zoom) {
-      videoChain += `,${seg.zoom.crop},${seg.zoom.scale}`;
-    }
-    if (colorFilter !== "null") {
-      videoChain += `,${colorFilter}`;
-    }
-    videoChain += `,fps=${cfg.fps},setsar=1:1[v${i}]`;
-    filterParts.push(videoChain);
-
-    // Audio: trim → master
-    filterParts.push(`[${src}:a]${atrim},${audioFilter}[a${i}]`);
-
-    videoLabels.push(`[v${i}]`);
-    audioLabels.push(`[a${i}]`);
-  });
-
-  // Concat
-  if (segments.length > 0) {
-    filterParts.push(
-      `${videoLabels.join("")}concat=n=${segments.length}:v=1:a=0[vout]`
-    );
-    filterParts.push(
-      `${audioLabels.join("")}concat=n=${segments.length}:v=0:a=1[aout]`
-    );
+  // Build video filter chain: scale to even dims → color correction → fps
+  const videoFilters: string[] = [
+    // Ensure even dimensions (required for libx264)
+    `scale=trunc(iw/2)*2:trunc(ih/2)*2`,
+  ];
+  if (colorFilter !== "null") {
+    videoFilters.push(colorFilter);
   }
+  videoFilters.push(`fps=${cfg.fps}`);
+  videoFilters.push("setsar=1:1");
 
-  const filterComplex = filterParts.join(";\n");
-
-  // Execute FFmpeg
   return new Promise((resolve, reject) => {
-    let cmd = ffmpeg();
-
-    // Add all inputs
-    for (const inputPath of inputPaths) {
-      cmd = cmd.input(inputPath);
-    }
-
-    cmd
-      .complexFilter(filterComplex)
+    ffmpeg(inputPath)
+      // Seek to clip start (input seeking — fast and keyframe-accurate)
+      .setStartTime(clip.start_s)
+      .duration(clip.end_s - clip.start_s)
+      // Video filters: scale + color + fps
+      .videoFilters(videoFilters.join(","))
+      // Audio filters: mastering chain
+      .audioFilters(audioFilter)
+      // Encoding
       .outputOptions([
-        "-map", "[vout]",
-        "-map", "[aout]",
         "-c:v", "libx264",
         "-crf", String(cfg.crf),
-        "-preset", "medium",
+        "-preset", "fast",
         "-c:a", "aac",
-        "-b:a", "320k",
+        "-b:a", "192k",
         "-movflags", "+faststart",
+        "-pix_fmt", "yuv420p",
       ])
       .output(outputPath)
-      .on("end", () => resolve(outputPath))
-      .on("error", (err) => reject(new Error(`Render failed: ${err.message}`)))
+      .on("start", (cmd) => {
+        console.log(`[Render] Clip ${clipIndex + 1}: ${clip.start_s}s → ${clip.end_s}s`);
+        console.log(`[Render] Command: ${cmd}`);
+      })
+      .on("end", () => {
+        console.log(`[Render] Clip ${clipIndex + 1} done: ${outputPath}`);
+        resolve(outputPath);
+      })
+      .on("error", (err, stdout, stderr) => {
+        console.error(`[Render] Clip ${clipIndex + 1} failed:`, err.message);
+        console.error(`[Render] stderr:`, stderr);
+        reject(new Error(`Render failed for clip ${clipIndex + 1}: ${err.message}`));
+      })
       .run();
   });
 }
 
 /**
- * Build render segments from selected clips + zoom events.
- * Maps each clip's time range to segments with zoom crop data.
+ * Render all selected clips from the source video.
+ * Each clip is rendered independently — simpler and more reliable than
+ * a single filter_complex with 50+ segments.
  */
-export function buildRenderSegments(
+export async function renderSkill1(
+  inputPaths: string[],
   clips: SelectedClip[],
-  zoomCrops: { start_s: number; end_s: number; crop: string; scale: string }[],
-  sourceIndex: number = 0
-): RenderSegment[] {
-  const segments: RenderSegment[] = [];
+  outputDir?: string,
+  config: Partial<RenderConfig> = {}
+): Promise<string[]> {
+  const dir = outputDir || path.join(os.tmpdir(), `clipmind-render-${Date.now()}`);
+  await fs.mkdir(dir, { recursive: true });
 
-  for (const clip of clips) {
-    // Find zoom crops that overlap with this clip
-    const overlapping = zoomCrops.filter(
-      (z) => z.start_s < clip.end_s && z.end_s > clip.start_s
-    );
+  const inputPath = inputPaths[0]; // Primary camera
+  const results: string[] = [];
 
-    if (overlapping.length === 0) {
-      // No zoom data — render as single segment
-      segments.push({
-        start_s: clip.start_s,
-        end_s: clip.end_s,
-        sourceIndex,
-      });
-    } else {
-      // Split clip into zoom segments
-      for (const zoom of overlapping) {
-        const segStart = Math.max(clip.start_s, zoom.start_s);
-        const segEnd = Math.min(clip.end_s, zoom.end_s);
-        if (segEnd > segStart) {
-          segments.push({
-            start_s: segStart,
-            end_s: segEnd,
-            sourceIndex,
-            zoom: { crop: zoom.crop, scale: zoom.scale },
-          });
-        }
-      }
+  for (let i = 0; i < clips.length; i++) {
+    try {
+      const outputPath = await renderClip(inputPath, clips[i], dir, i, config);
+      results.push(outputPath);
+    } catch (err) {
+      console.error(`Skipping clip ${i + 1} due to render error:`, err);
+      // Continue with other clips — don't fail the whole batch
     }
   }
 
-  return segments.sort((a, b) => a.start_s - b.start_s);
+  if (results.length === 0) {
+    throw new Error("All clip renders failed");
+  }
+
+  return results;
+}
+
+// Keep for backwards compat but simplified
+export function buildRenderSegments(
+  clips: SelectedClip[],
+  _zoomCrops: any[] = [],
+  _sourceIndex: number = 0
+) {
+  // Zoom is now handled separately, not in render segments
+  return clips.map((clip) => ({
+    start_s: clip.start_s,
+    end_s: clip.end_s,
+    sourceIndex: _sourceIndex,
+  }));
 }
