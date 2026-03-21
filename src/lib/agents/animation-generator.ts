@@ -33,8 +33,26 @@ const DEFAULT_BRAND: BrandConfig = {
 };
 
 /**
- * Generate Remotion React components for detected show moments.
- * Uses claude-sonnet with knowledge of Remotion APIs.
+ * Available pre-built Remotion compositions.
+ * These follow Remotion best practices:
+ * - All animations driven by useCurrentFrame()
+ * - No CSS transitions or Tailwind animation classes
+ * - Uses interpolate() and spring() for motion
+ */
+const COMPOSITION_TYPES = {
+  text_card: "TextCard",
+  animated_counter: "AnimatedCounter",
+  list_builder: "ListBuilder",
+  building_flowchart: "ListBuilder",
+  side_by_side: "TextCard",
+  data_bar: "AnimatedCounter",
+  framework_grid: "ListBuilder",
+} as const;
+
+/**
+ * Generate animation specs for detected show moments.
+ * Uses Claude to decide which composition type and props to use,
+ * then maps to our pre-built Remotion compositions.
  */
 export async function generateAnimations(
   moments: ShowMoment[],
@@ -44,75 +62,41 @@ export async function generateAnimations(
   if (moments.length === 0) return [];
 
   const b = { ...DEFAULT_BRAND, ...brand };
-  const animations: GeneratedAnimation[] = [];
 
-  // Process in batches of 3 to avoid hitting token limits
-  for (let i = 0; i < moments.length; i += 3) {
-    const batch = moments.slice(i, i + 3);
-    const batchResults = await generateBatch(batch, b, dnaSkillContent);
-    animations.push(...batchResults);
-  }
-
-  return animations;
-}
-
-async function generateBatch(
-  moments: ShowMoment[],
-  brand: BrandConfig,
-  dnaSkillContent?: string
-): Promise<GeneratedAnimation[]> {
   const momentDescriptions = moments
-    .map((m, i) => `
-Moment ${i + 1}:
-- Timestamp: ${m.timestamp_s}s, Duration: ${m.duration_s}s
-- Type: ${m.suggested_type}
-- Content: "${m.content}"
-- Context: "${m.context}"`)
+    .map((m, i) =>
+      `${i}: [${m.timestamp_s}s, ${m.duration_s}s] type=${m.suggested_type} content="${m.content}" context="${m.context}"`
+    )
     .join("\n");
 
-  const prompt = `Generate Remotion React components for these animation moments.
+  const response = await anthropic.messages.create({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 2000,
+    messages: [{
+      role: "user",
+      content: `For each moment, pick the best animation type and extract the display props.
 
-BRAND SYSTEM:
-- Heading font: ${brand.headingFont}
-- Body font: ${brand.bodyFont}
-- Primary color: ${brand.primaryColor}
-- Secondary color: ${brand.secondaryColor}
-- Animation style: ${brand.animationStyle}
-- Dark mode: ${brand.darkModeDefault}
-${dnaSkillContent ? `\nCREATOR DNA CONTEXT:\n${dnaSkillContent.slice(0, 500)}` : ""}
+AVAILABLE TYPES:
+- text_card: { text: string } — bold statement, key takeaway
+- animated_counter: { value: number, label: string } — statistic, count
+- list_builder: { items: string[], title: string } — list of 2+ points
+
+BRAND COLORS: primary=${b.primaryColor}, bg=${b.darkModeDefault ? "#111" : "#fff"}
 
 MOMENTS:
 ${momentDescriptions}
 
-For each moment, generate a complete Remotion React component. Use these imports:
-import { AbsoluteFill, useCurrentFrame, interpolate, spring, useVideoConfig } from 'remotion';
+Return JSON array:
+[{"index": 0, "type": "text_card", "props": {"text": "Key point here"}}, ...]
 
-RULES:
-- Each component must be a valid React functional component
-- Use the brand colors and fonts
-- Use spring() or interpolate() for smooth animations
-- Component should be self-contained (no external imports besides remotion)
-- Duration should match the moment's duration_s (at 30fps)
-
-Return a JSON array:
-[
-  {
-    "moment_index": 0,
-    "component_code": "full React component code as a string",
-    "props": { "text": "...", "primaryColor": "..." }
-  }
-]
-
-Return ONLY the JSON array.`;
-
-  const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-5-20250929",
-    max_tokens: 4000,
-    messages: [{ role: "user", content: prompt }],
+Return ONLY the JSON array.`,
+    }],
   });
 
   const textBlock = response.content.find((c) => c.type === "text");
-  if (!textBlock || textBlock.type !== "text") return [];
+  if (!textBlock || textBlock.type !== "text") {
+    return fallbackAnimations(moments, b);
+  }
 
   let jsonStr = textBlock.text.trim();
   if (jsonStr.startsWith("```")) {
@@ -122,55 +106,37 @@ Return ONLY the JSON array.`;
   try {
     const results = JSON.parse(jsonStr);
     return results.map((r: any) => {
-      const moment = moments[r.moment_index] || moments[0];
+      const moment = moments[r.index] ?? moments[0];
+      const type = r.type || moment.suggested_type;
       return {
         timestamp_s: moment.timestamp_s,
         duration_s: moment.duration_s,
-        type: moment.suggested_type,
-        component_code: r.component_code,
-        props: r.props || {},
+        type,
+        component_code: "", // Not used — we use pre-built compositions
+        props: {
+          ...r.props,
+          primaryColor: b.primaryColor,
+          bgColor: b.darkModeDefault ? "#111" : "#fff",
+          fontFamily: b.headingFont,
+        },
       };
     });
   } catch {
-    // Fallback: generate simple text cards
-    return moments.map((m) => ({
-      timestamp_s: m.timestamp_s,
-      duration_s: m.duration_s,
-      type: m.suggested_type,
-      component_code: generateFallbackTextCard(m.content, brand),
-      props: { text: m.content },
-    }));
+    return fallbackAnimations(moments, b);
   }
 }
 
-function generateFallbackTextCard(text: string, brand: BrandConfig): string {
-  return `import { AbsoluteFill, useCurrentFrame, interpolate, spring, useVideoConfig } from 'remotion';
-
-export const TextCard = () => {
-  const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
-  const opacity = interpolate(frame, [0, 8], [0, 1], { extrapolateRight: 'clamp' });
-  const translateY = spring({ frame, fps, config: { stiffness: 200, damping: 20 } });
-
-  return (
-    <AbsoluteFill style={{
-      backgroundColor: '${brand.darkModeDefault ? "#111" : "#fff"}',
-      justifyContent: 'center',
-      alignItems: 'center',
-    }}>
-      <div style={{
-        fontFamily: '${brand.headingFont}',
-        fontSize: 72,
-        color: '${brand.primaryColor}',
-        opacity,
-        transform: \`translateY(\${(1 - translateY) * 50}px)\`,
-        padding: '0 80px',
-        textAlign: 'center',
-        fontWeight: 700,
-      }}>
-        ${JSON.stringify(text)}
-      </div>
-    </AbsoluteFill>
-  );
-};`;
+function fallbackAnimations(moments: ShowMoment[], brand: BrandConfig): GeneratedAnimation[] {
+  return moments.map((m) => ({
+    timestamp_s: m.timestamp_s,
+    duration_s: m.duration_s,
+    type: "text_card",
+    component_code: "",
+    props: {
+      text: m.content,
+      primaryColor: brand.primaryColor,
+      bgColor: brand.darkModeDefault ? "#111" : "#fff",
+      fontFamily: brand.headingFont,
+    },
+  }));
 }
