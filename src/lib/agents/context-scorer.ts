@@ -9,29 +9,29 @@ export const NarrativeSegmentSchema = z.object({
   start_s: z.number(),
   end_s: z.number(),
   text: z.string(),
-  topic: z.string(),
-  beat: z.enum(["intro", "setup", "build", "climax", "resolution", "transition", "aside"]),
-  emotion: z.enum(["neutral", "excited", "funny", "serious", "passionate", "reflective"]),
+  topic: z.string().catch("general"),
+  beat: z.enum(["intro", "setup", "build", "climax", "resolution", "transition", "aside"]).catch("setup"),
+  emotion: z.enum(["neutral", "excited", "funny", "serious", "passionate", "reflective"]).catch("neutral"),
 });
 
 export type NarrativeSegment = z.infer<typeof NarrativeSegmentSchema>;
 
 // Scored segment
 export const ScoredSegmentSchema = z.object({
-  start_s: z.number(),
-  end_s: z.number(),
-  text: z.string(),
-  topic: z.string(),
-  beat: z.string(),
-  emotion: z.string(),
+  start_s: z.number().catch(0),
+  end_s: z.number().catch(0),
+  text: z.string().catch(""),
+  topic: z.string().catch("general"),
+  beat: z.string().catch("setup"),
+  emotion: z.string().catch("neutral"),
   scores: z.object({
-    humor: z.number().min(0).max(10),
-    insight: z.number().min(0).max(10),
-    energy: z.number().min(0).max(10),
-    hook_quality: z.number().min(0).max(10),
-    creator_match: z.number().min(0).max(10),
-  }),
-  mood: z.enum(["funny", "interesting", "surprising", "emotional", "educational"]),
+    humor: z.number().min(0).max(10).catch(5),
+    insight: z.number().min(0).max(10).catch(5),
+    energy: z.number().min(0).max(10).catch(5),
+    hook_quality: z.number().min(0).max(10).catch(5),
+    creator_match: z.number().min(0).max(10).catch(5),
+  }).catch({ humor: 5, insight: 5, energy: 5, hook_quality: 5, creator_match: 5 }),
+  mood: z.enum(["funny", "interesting", "surprising", "emotional", "educational"]).catch("interesting"),
 });
 
 export type ScoredSegment = z.infer<typeof ScoredSegmentSchema>;
