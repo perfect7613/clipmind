@@ -67,12 +67,22 @@ function xfadeTwoClips(
       const duration1 = metadata.format.duration || 30;
       const offset = Math.max(0, duration1 - durationS);
 
+      // Normalize both clips to same format/resolution/fps before xfade
+      // This prevents "filtergraph inputs/outputs" errors from mismatched formats
+      const filterComplex = [
+        `[0:v]scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30,format=yuv420p[v0];`,
+        `[1:v]scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30,format=yuv420p[v1];`,
+        `[v0][v1]xfade=transition=${xfadeType}:duration=${durationS}:offset=${offset.toFixed(2)}[vout];`,
+        `[0:a]aformat=sample_rates=44100:channel_layouts=stereo[a0];`,
+        `[1:a]aformat=sample_rates=44100:channel_layouts=stereo[a1];`,
+        `[a0][a1]acrossfade=d=${durationS}:c1=tri:c2=tri[aout]`,
+      ].join("");
+
       ffmpeg()
         .input(input1)
         .input(input2)
         .outputOptions([
-          "-filter_complex",
-          `[0:v][1:v]xfade=transition=${xfadeType}:duration=${durationS}:offset=${offset.toFixed(2)}[vout];[0:a][1:a]acrossfade=d=${durationS}:c1=tri:c2=tri[aout]`,
+          "-filter_complex", filterComplex,
           "-map", "[vout]",
           "-map", "[aout]",
           "-c:v", "libx264",
@@ -81,11 +91,14 @@ function xfadeTwoClips(
           "-c:a", "aac",
           "-b:a", "192k",
           "-movflags", "+faststart",
-          "-pix_fmt", "yuv420p",
         ])
         .output(output)
+        .on("start", (cmd) => console.log("[Highlight] Command:", cmd))
         .on("end", () => resolve())
-        .on("error", (err) => reject(new Error(`Highlight stitch failed: ${err.message}`)))
+        .on("error", (err, _stdout, stderr) => {
+          console.error("[Highlight] stderr:", stderr);
+          reject(new Error(`Highlight stitch failed: ${err.message}`));
+        })
         .run();
     });
   });

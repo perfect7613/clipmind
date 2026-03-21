@@ -11,7 +11,9 @@ export async function extractThumbnails(
   outputDir: string,
   fps: number = 1
 ): Promise<string> {
-  const thumbDir = path.join(outputDir, "thumbnails");
+  // Use video filename as subdirectory to avoid conflicts between clips
+  const videoName = path.basename(videoPath, path.extname(videoPath));
+  const thumbDir = path.join(outputDir, `thumbnails-${videoName}`);
   await fs.mkdir(thumbDir, { recursive: true });
 
   return new Promise((resolve, reject) => {

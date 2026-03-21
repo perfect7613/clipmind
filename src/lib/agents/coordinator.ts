@@ -161,6 +161,11 @@ export async function runPipeline(
             clipWords,
           }
         );
+        // Validate the output file isn't empty/corrupt
+        const stat = await fs.stat(editedPath);
+        if (stat.size < 1000) {
+          throw new Error(`Output file too small (${stat.size} bytes) — likely corrupt`);
+        }
       } catch (err) {
         console.error(`[Pipeline] Clip ${i + 1} render failed, skipping:`, err);
         continue;
