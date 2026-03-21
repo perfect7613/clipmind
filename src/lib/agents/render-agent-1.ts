@@ -82,9 +82,11 @@ export async function renderClip(
     ffmpeg(inputPath)
       .setStartTime(clip.start_s)
       .duration(clipDurationS)
-      .videoFilters(videoFilter)
-      .audioFilters(audioFilter)
+      // Use outputOptions for filters to prevent fluent-ffmpeg from
+      // splitting on commas (breaks zoompan's between() expressions)
       .outputOptions([
+        "-filter:v", videoFilter,
+        "-filter:a", audioFilter,
         "-c:v", "libx264",
         "-crf", String(cfg.crf),
         "-preset", "fast",
@@ -117,9 +119,9 @@ export async function renderClip(
           ffmpeg(inputPath)
             .setStartTime(clip.start_s)
             .duration(clipDurationS)
-            .videoFilters(simpleFilter)
-            .audioFilters(audioFilter)
             .outputOptions([
+              "-filter:v", simpleFilter,
+              "-filter:a", audioFilter,
               "-c:v", "libx264",
               "-crf", String(cfg.crf),
               "-preset", "fast",

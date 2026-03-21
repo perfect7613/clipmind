@@ -80,7 +80,7 @@ export async function planZoomEvents(
   const targetEvents = Math.max(2, Math.round((totalDurationS / 60) * 4 * cfg.aggressiveness));
 
   const response = await anthropic.messages.create({
-    model: "claude-haiku-4-5-20251001",
+    model: "claude-sonnet-4-6",
     max_tokens: 2000,
     messages: [
       {

@@ -40,7 +40,7 @@ export async function detectShowMoments(
   const dnaSection = dnaContext ? `\nCREATOR DNA SKILL (use to match this creator's style):\n${dnaContext}\n` : "";
 
   const response = await anthropic.messages.create({
-    model: "claude-haiku-4-5-20251001",
+    model: "claude-sonnet-4-6",
     max_tokens: 3000,
     messages: [
       {
