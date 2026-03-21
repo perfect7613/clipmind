@@ -90,7 +90,7 @@ export default function DashboardPage() {
         setProgress(prog);
         if (prog.status === "completed") {
           eventSource.close();
-          router.push(`/results/${data.jobId}`);
+          router.push(`/dashboard/results/${data.jobId}`);
         }
         if (prog.status === "failed") {
           eventSource.close();

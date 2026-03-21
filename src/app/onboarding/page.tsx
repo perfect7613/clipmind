@@ -89,7 +89,7 @@ export default function OnboardingPage() {
             <CardDescription>Your AI editor now knows your style</CardDescription>
           </CardHeader>
           <CardContent>
-            <Button onClick={() => router.push("/")} className="w-full">
+            <Button onClick={() => router.push("/dashboard")} className="w-full">
               Go to Dashboard
             </Button>
           </CardContent>

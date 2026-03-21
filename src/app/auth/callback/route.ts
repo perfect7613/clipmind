@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
           .limit(1);
 
         if (profiles && profiles.length > 0) {
-          return NextResponse.redirect(`${origin}/`);
+          return NextResponse.redirect(`${origin}/dashboard`);
         }
       }
 
