@@ -106,7 +106,7 @@ Return a JSON array:
 Return ONLY the JSON array.`;
 
   const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-5-20250514",
+    model: "claude-sonnet-4-5-20250929",
     max_tokens: 4000,
     messages: [{ role: "user", content: prompt }],
   });

@@ -80,7 +80,7 @@ export async function analyzeContext(
     .join("\n\n");
 
   const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-5-20250514",
+    model: "claude-sonnet-4-5-20250929",
     max_tokens: 4000,
     messages: [
       {
