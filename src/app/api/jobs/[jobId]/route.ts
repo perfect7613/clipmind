@@ -30,6 +30,8 @@ export async function GET(
       currentStep: job.currentStep,
       progressPct: job.progressPct,
       errorMessage: job.errorMessage,
+      presetId: job.presetId,
+      highlightReelUrl: job.highlightReelUrl,
       clips: jobClips,
       startedAt: job.startedAt,
       completedAt: job.completedAt,
