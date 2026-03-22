@@ -257,11 +257,23 @@ export function TimelineEditor({ clipId, videoSrc }: TimelineEditorProps) {
     setExporting(true, 0);
 
     try {
+      // Save segments + effects to timeline data
       await fetch(`/api/clips/${clipId}/timeline`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          timeline: { cutPoints, effects, zoomEvents: [], speedRamps: [] },
+          timeline: {
+            cutPoints: segments.map((s) => ({ start_s: s.start_s, end_s: s.end_s })),
+            segments: segments.map((s) => ({
+              id: s.id,
+              start_s: s.start_s,
+              end_s: s.end_s,
+              effects: s.effects,
+            })),
+            effects,
+            zoomEvents: [],
+            speedRamps: [],
+          },
         }),
       });
 
@@ -603,6 +615,59 @@ export function TimelineEditor({ clipId, videoSrc }: TimelineEditorProps) {
               </div>
             </div>
           </div>
+
+          {/* Transition picker row between segments */}
+          {segments.length > 1 && (
+            <div className="relative overflow-x-auto" style={{ height: "28px", background: "#080808" }}>
+              <div style={{ width: `${100 * timelineZoom}%`, position: "relative", height: "100%" }}>
+                {segments.map((seg, i) => {
+                  if (i === segments.length - 1) return null;
+                  const nextSeg = segments[i + 1];
+                  // Position the transition picker at the boundary
+                  const boundaryPct = (seg.end_s / durationS) * 100;
+                  return (
+                    <div
+                      key={`trans-${seg.id}`}
+                      className="absolute flex items-center justify-center"
+                      style={{
+                        left: `${boundaryPct}%`,
+                        transform: "translateX(-50%)",
+                        height: "100%",
+                        zIndex: 20,
+                      }}
+                    >
+                      <select
+                        value={seg.effects.transitionType}
+                        onChange={(e) => {
+                          const { updateEffects, selectSegmentById } = useTimelineStore.getState();
+                          selectSegmentById(seg.id);
+                          updateEffects({ transitionType: e.target.value });
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                          fontSize: "9px",
+                          fontFamily: "'JetBrains Mono', monospace",
+                          background: "#151515",
+                          color: "#888",
+                          border: "1px solid #222",
+                          borderRadius: "3px",
+                          padding: "2px 4px",
+                          cursor: "pointer",
+                          maxWidth: "70px",
+                        }}
+                      >
+                        <option value="crossfade">X-Fade</option>
+                        <option value="dip-to-black">Dip Blk</option>
+                        <option value="wipe-left">Wipe</option>
+                        <option value="fade">Fade</option>
+                        <option value="dissolve">Dissolve</option>
+                      </select>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Effect panel — slides in from right */}
