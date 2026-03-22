@@ -48,9 +48,14 @@ export async function POST(
     const outputDir = path.join(os.tmpdir(), "clipmind-outputs");
     await fs.mkdir(outputDir, { recursive: true });
 
-    // Get segments from timeline data
-    const segments: Array<{ start_s: number; end_s: number; effects?: any }> =
+    // Get segments from timeline data — filter out zero/tiny duration segments
+    const rawSegments: Array<{ start_s: number; end_s: number; effects?: any }> =
       timeline?.segments || timeline?.cutPoints || [{ start_s: clip.startS || 0, end_s: clip.endS || 60 }];
+    const segments = rawSegments.filter((s) => (s.end_s - s.start_s) >= 0.5);
+    if (segments.length === 0) {
+      // Fallback to full clip
+      segments.push({ start_s: clip.startS || 0, end_s: clip.endS || 60 });
+    }
 
     const encoder = new TextEncoder();
     const stream = new ReadableStream({

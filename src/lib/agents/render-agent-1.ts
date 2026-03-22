@@ -46,6 +46,9 @@ export async function renderClip(
   const outputPath = path.join(outputDir, `edited-clip-${clipIndex + 1}.mp4`);
 
   const clipDurationS = clip.end_s - clip.start_s;
+  if (clipDurationS < 0.5) {
+    throw new Error(`Clip duration too short (${clipDurationS.toFixed(4)}s) — minimum 0.5s`);
+  }
 
   // ── Plan zoom events ONLY if DNA requests zoom ──
   let zoomPlan: ZoomPlan | null = null;
