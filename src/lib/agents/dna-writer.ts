@@ -135,7 +135,13 @@ Return ONLY the JSON object, no explanation.`,
     ? rawParsed.observations.filter((o: any) => typeof o === "string").slice(0, 7)
     : [];
 
-  const brollPercentage = input.visual?.brollPresence?.estimatedPercentage;
+  // B-roll %: prefer window-based estimate, fallback to visual analysis
+  const windowBroll = input.windows && input.windows.length > 0
+    ? summarizeWindows(input.windows).brollPercentage
+    : undefined;
+  const brollPercentage = windowBroll && windowBroll > 0
+    ? Math.round(windowBroll)
+    : input.visual?.brollPresence?.estimatedPercentage;
   const speechRatio = input.pacing
     ? (100 - (input.pacing.silenceDistribution?.silencePercentage || 25)) / 100
     : undefined;
@@ -220,6 +226,89 @@ ${input.visual.captionStyle.detected ? `  - Casing: ${input.visual.captionStyle.
   return parts.join("\n\n");
 }
 
+interface WindowSummary {
+  topColors: string[];
+  avgBrightness: number;
+  totalSceneChanges: number;
+  avgSceneChangesPerWindow: number;
+  brollPercentage: number;
+  pacingCategory: string;
+}
+
+function summarizeWindows(windows: FrameWindow[]): WindowSummary {
+  const withData = windows.filter((w) => w.frameCount > 0);
+  if (withData.length === 0) {
+    return {
+      topColors: [],
+      avgBrightness: 128,
+      totalSceneChanges: 0,
+      avgSceneChangesPerWindow: 0,
+      brollPercentage: 0,
+      pacingCategory: "unknown",
+    };
+  }
+
+  // Aggregate dominant colors across all windows
+  const colorCounts = new Map<string, number>();
+  for (const w of withData) {
+    if (w.dominantColors) {
+      for (const c of w.dominantColors) {
+        colorCounts.set(c, (colorCounts.get(c) || 0) + 1);
+      }
+    }
+  }
+  const topColors = [...colorCounts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([hex]) => hex);
+
+  // Average brightness
+  const brightnessValues = withData
+    .filter((w) => w.avgBrightness !== undefined)
+    .map((w) => w.avgBrightness!);
+  const avgBrightness = brightnessValues.length > 0
+    ? brightnessValues.reduce((a, b) => a + b, 0) / brightnessValues.length
+    : 128;
+
+  // Scene changes
+  const totalSceneChanges = withData.reduce(
+    (sum, w) => sum + (w.sceneChangeCount || 0),
+    0
+  );
+  const avgSceneChangesPerWindow = totalSceneChanges / withData.length;
+
+  // B-roll estimate: windows without face = likely B-roll
+  // Since face detection is TODO, use a heuristic: windows with high scene
+  // change count or very different brightness from median are likely B-roll
+  const medianBrightness = brightnessValues.length > 0
+    ? brightnessValues.sort((a, b) => a - b)[Math.floor(brightnessValues.length / 2)]
+    : 128;
+  const brollWindows = withData.filter((w) => {
+    const brightnessDiff = Math.abs((w.avgBrightness || 128) - medianBrightness);
+    const highSceneChanges = (w.sceneChangeCount || 0) >= 3;
+    return brightnessDiff > 40 || highSceneChanges;
+  });
+  const brollPercentage = (brollWindows.length / withData.length) * 100;
+
+  // Pacing from scene change frequency
+  const totalDurationMin = (withData.length * 10) / 60;
+  const cutsPerMin = totalDurationMin > 0 ? totalSceneChanges / totalDurationMin : 0;
+  let pacingCategory: string;
+  if (cutsPerMin < 3) pacingCategory = "slow/relaxed";
+  else if (cutsPerMin < 8) pacingCategory = "moderate";
+  else if (cutsPerMin < 15) pacingCategory = "fast";
+  else pacingCategory = "very fast/chaotic";
+
+  return {
+    topColors,
+    avgBrightness,
+    totalSceneChanges,
+    avgSceneChangesPerWindow,
+    brollPercentage,
+    pacingCategory,
+  };
+}
+
 function mergeWithDefaults(input: DnaWriterInput): DnaSkillParams {
   const params = { ...DEFAULT_DNA_PARAMS };
   params.username = input.username;
@@ -273,6 +362,36 @@ function mergeWithDefaults(input: DnaWriterInput): DnaSkillParams {
         : input.audio.speechRatio < 0.6
           ? 3  // lots of breathing room → fewer cuts
           : 5;
+    }
+  }
+
+  // Enrich with per-window analysis data
+  if (input.windows && input.windows.length > 0) {
+    const ws = summarizeWindows(input.windows);
+
+    // Color profile from actual dominant colors brightness
+    if (ws.avgBrightness > 0) {
+      if (ws.avgBrightness < 80) params.color.profile = "cinematic";
+      else if (ws.avgBrightness > 180) params.color.profile = "flat";
+      // Otherwise keep what visual analysis set
+    }
+
+    // Pacing from scene change frequency (override if no pacing data)
+    if (!input.pacing) {
+      const totalDurationMin = (input.windows.length * 10) / 60;
+      if (totalDurationMin > 0) {
+        params.pacing.cutsPerMinute = Math.round(
+          ws.totalSceneChanges / totalDurationMin
+        );
+      }
+    }
+
+    // Brand primary color from most dominant color
+    if (ws.topColors.length > 0) {
+      params.brand.primaryColor = ws.topColors[0];
+      if (ws.topColors.length > 1) {
+        params.brand.secondaryColor = ws.topColors[1];
+      }
     }
   }
 

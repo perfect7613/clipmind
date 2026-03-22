@@ -64,7 +64,7 @@ export async function onboardFromYouTube(
 
   onProgress?.("analyzing_voice", 65);
 
-  // Step 5: Voice analysis (from captions)
+  // Step 6: Voice analysis (from captions)
   const captionText = ytData.captions.map((c) => c.text).join(" ");
   const voiceAnalysis = captionText.length > 50
     ? await analyzeVoice(captionText)
@@ -72,7 +72,7 @@ export async function onboardFromYouTube(
 
   onProgress?.("analyzing_pacing", 75);
 
-  // Step 6: Pacing analysis (from caption timestamps as word timestamps)
+  // Step 7: Pacing analysis (from caption timestamps as word timestamps)
   const wordTimestamps = ytData.captions.map((c) => ({
     word: c.text,
     start_s: c.start_s,
@@ -84,7 +84,7 @@ export async function onboardFromYouTube(
 
   onProgress?.("analyzing_audio", 80);
 
-  // Step 7: Audio analysis (extract audio then run FFmpeg analysis)
+  // Step 8: Audio analysis (extract audio then run FFmpeg analysis)
   let audioAnalysis;
   try {
     const { audioPath } = await extractAudio(videoPath);
@@ -96,7 +96,7 @@ export async function onboardFromYouTube(
 
   onProgress?.("writing_dna", 88);
 
-  // Step 8: Write DNA skill
+  // Step 9: Write DNA skill (with per-window data)
   const username = creatorName.toLowerCase().replace(/[^a-z0-9]/g, "-").slice(0, 30);
   const { skillContent } = await writeDnaSkill({
     username,
