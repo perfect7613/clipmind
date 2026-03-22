@@ -51,12 +51,12 @@ export async function fetchYouTubeData(url: string): Promise<YouTubeFetchResult>
     throw new Error(`Invalid YouTube URL: ${url}`);
   }
 
-  // Fetch metadata as JSON
+  // Fetch metadata as JSON (increase buffer for large yt-dlp output)
   const { stdout: metadataJson } = await execFileAsync("yt-dlp", [
     "--dump-json",
     "--no-download",
     url,
-  ]);
+  ], { maxBuffer: 50 * 1024 * 1024 }); // 50MB buffer
 
   const metadata = JSON.parse(metadataJson);
 
