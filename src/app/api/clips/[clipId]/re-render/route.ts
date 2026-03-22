@@ -139,11 +139,16 @@ export async function POST(
             if (segmentPaths.length === 1) {
               outputPath = segmentPaths[0];
             } else {
-              // Get transition config from the first segment's effects
-              const transitionType = segments[0]?.effects?.transitionType || "crossfade";
-              const transConfig = { type: transitionType as any, durationS: 0.5 };
+              // Build per-segment transition types from each segment's effects
+              const perSegmentTransitions = segments.slice(0, -1).map((seg) => {
+                const t = seg.effects?.transitionType || "crossfade";
+                return t;
+              });
+              console.log(`[Re-render] Per-segment transitions: ${perSegmentTransitions.join(", ")}`);
 
-              // Build CutSegment format for transition engine
+              const defaultConfig = { type: "crossfade" as const, durationS: 0.5 };
+
+              // Build CutSegment format
               const cutSegments = segmentPaths.map((p, idx) => ({
                 start_s: 0,
                 end_s: segments[idx] ? segments[idx].end_s - segments[idx].start_s : 30,
@@ -152,9 +157,11 @@ export async function POST(
 
               outputPath = path.join(outputDir, `re-rendered-${clipId}-${Date.now()}.mp4`);
               try {
-                await applyTransitionsBetweenSegments(segmentPaths[0], cutSegments, transConfig, outputPath);
-              } catch {
-                // Fallback: just use the first segment
+                await applyTransitionsBetweenSegments(
+                  segmentPaths[0], cutSegments, defaultConfig, outputPath, perSegmentTransitions
+                );
+              } catch (stitchErr) {
+                console.error("[Re-render] Stitch failed:", stitchErr);
                 outputPath = segmentPaths[0];
               }
             }

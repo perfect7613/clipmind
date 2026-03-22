@@ -134,13 +134,20 @@ function normalizeTransitionType(raw: string): TransitionType | null {
  *   [0:a][1:a]acrossfade=d=T:c1=tri:c2=tri[ax0];
  *   [ax0][2:a]acrossfade=d=T:c1=tri:c2=tri[aout]
  */
+/**
+ * Build xfade filter with per-segment transition types.
+ * @param segments - Cut segments
+ * @param config - Default transition config (used when segment doesn't specify one)
+ * @param perSegmentTransitions - Optional array of transition types, one per segment boundary
+ *                                 (length = segments.length - 1)
+ */
 export function buildXfadeFilter(
   segments: CutSegment[],
-  config: TransitionConfig
+  config: TransitionConfig,
+  perSegmentTransitions?: string[]
 ): string {
   if (segments.length < 2) return "";
 
-  const ffmpegTransition = XFADE_TRANSITION_MAP[config.type] ?? "fade";
   const T = config.durationS;
   const videoFilters: string[] = [];
   const audioFilters: string[] = [];
@@ -155,6 +162,10 @@ export function buildXfadeFilter(
 
   for (let i = 1; i < segments.length; i++) {
     const isLast = i === segments.length - 1;
+
+    // Use per-segment transition if provided, otherwise default
+    const transType = perSegmentTransitions?.[i - 1] || config.type;
+    const ffmpegTransition = XFADE_TRANSITION_MAP[transType] ?? "fade";
 
     // Offset = point in the output timeline where this xfade begins
     const offset = Math.max(0, cumulativeDuration - T);
@@ -196,7 +207,8 @@ export async function applyTransitionsBetweenSegments(
   inputPath: string,
   segments: CutSegment[],
   config: TransitionConfig,
-  outputPath: string
+  outputPath: string,
+  perSegmentTransitions?: string[]
 ): Promise<string> {
   if (segments.length === 0) {
     throw new Error("No segments provided for transition engine");
@@ -241,7 +253,8 @@ export async function applyTransitionsBetweenSegments(
       end_s: s.end_s - s.start_s,
       path: segmentPaths[i],
     })),
-    safeConfig
+    safeConfig,
+    perSegmentTransitions
   );
 
   await runXfadeCommand(segmentPaths, filter, outputPath);
