@@ -1,14 +1,12 @@
 /**
- * Smooth Zoom Engine
+ * Zoom Engine
  *
- * Two zoom approaches:
- * 1. SLOW KEN BURNS — gradual zoom-in from 1.0x to 1.1x over the clip duration
- *    Uses FFmpeg zoompan with a SIMPLE expression (no nested if/between)
- * 2. STATIC CROP — centered crop at 1.1x for the whole clip
- *    Fallback if zoompan fails
+ * Applies a centered crop+scale zoom effect based on zoom planner events.
+ * Uses FFmpeg crop/scale with iw/ih expressions — works at ANY resolution
+ * without stretching or aspect ratio issues.
  *
- * The zoompan approach creates a cinematic slow push-in effect.
- * The expression is kept deliberately simple to avoid FFmpeg parser issues.
+ * No zoompan — it causes stretching and aspect ratio problems.
+ * Clean crop+scale is reliable and visually correct.
  */
 
 import type { ZoomEvent } from "./zoom-planner";
@@ -22,7 +20,6 @@ const ZOOM_FACTORS: Record<string, number> = {
 
 /**
  * Detect video resolution via ffprobe.
- * Returns [width, height] or [1280, 720] as fallback.
  */
 export function detectResolution(videoPath: string): Promise<[number, number]> {
   return new Promise((resolve) => {
@@ -41,26 +38,20 @@ export function detectResolution(videoPath: string): Promise<[number, number]> {
 }
 
 /**
- * Build a smooth zoom filter.
- *
- * If we have the video resolution, uses zoompan for a cinematic slow push-in.
- * Otherwise falls back to static crop+scale.
- *
- * @param events - Zoom events from the planner
- * @param fps - Output framerate
- * @param width - Video width (from ffprobe)
- * @param height - Video height (from ffprobe)
+ * Build a centered crop+scale zoom filter from zoom events.
+ * Uses iw/ih — works at any resolution without stretching.
+ * Returns null if no zoom needed.
  */
 export function buildSmoothZoomFilter(
   events: ZoomEvent[],
-  fps: number = 30,
-  width?: number,
-  height?: number,
+  _fps: number = 30,
+  _width?: number,
+  _height?: number,
 ): string | null {
   if (events.length === 0) return null;
   if (events.every((e) => e.zoom_level === "normal")) return null;
 
-  // Find the target zoom level
+  // Find the dominant non-normal zoom level
   const zoomDurations: Record<string, number> = {};
   for (const event of events) {
     const dur = event.end_s - event.start_s;
@@ -72,37 +63,13 @@ export function buildSmoothZoomFilter(
     bestZoom = "tight";
   }
 
-  const targetZoom = ZOOM_FACTORS[bestZoom] || 1.0;
-  if (targetZoom <= 1.0) return null;
+  const zoom = ZOOM_FACTORS[bestZoom] || 1.0;
+  if (zoom <= 1.0) return null;
 
-  // If we know the resolution, use zoompan for smooth Ken Burns
-  if (width && height) {
-    return buildZoompanFilter(targetZoom, fps, width, height);
-  }
+  // Centered crop then scale back — preserves aspect ratio perfectly
+  const cropPct = (1 / zoom).toFixed(4);
+  const zoomStr = zoom.toFixed(4);
 
-  // Fallback: static crop+scale (works at any resolution via iw/ih)
-  return buildStaticCropFilter(targetZoom);
-}
-
-/**
- * Zoompan filter for smooth Ken Burns push-in.
- * Simple expression: zoom from 1.0 to targetZoom linearly over the clip.
- * Centered on frame. Explicit resolution.
- */
-function buildZoompanFilter(targetZoom: number, fps: number, w: number, h: number): string {
-  const delta = (targetZoom - 1).toFixed(4);
-  // Total frames isn't known here, but zoompan's 'on' variable counts output frames
-  // Use a slow ramp: z = 1 + delta * (on / (on + 300))  -- asymptotic approach
-  // This zooms smoothly and never exceeds targetZoom
-  return `zoompan=z='1+${delta}*(on/(on+${fps * 10}))':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=${w}x${h}:fps=${fps}`;
-}
-
-/**
- * Static centered crop+scale fallback.
- */
-function buildStaticCropFilter(targetZoom: number): string {
-  const cropPct = (1 / targetZoom).toFixed(4);
-  const zoomStr = targetZoom.toFixed(4);
   return [
     `crop=trunc(iw*${cropPct}/2)*2:trunc(ih*${cropPct}/2)*2:(iw-trunc(iw*${cropPct}/2)*2)/2:(ih-trunc(ih*${cropPct}/2)*2)/2`,
     `scale=trunc(iw*${zoomStr}/2)*2:trunc(ih*${zoomStr}/2)*2:flags=lanczos`,

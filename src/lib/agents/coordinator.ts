@@ -191,6 +191,46 @@ export async function runPipeline(
         continue;
       }
 
+      // ── Apply transitions between scene breaks within the clip ──
+      const transitionConfig = getDefaultTransition(dnaContent);
+      if (clipWords.length > 0 && transitionConfig.type !== "crossfade") {
+        // Detect silence gaps > 0.8s as scene breaks within the clip
+        const sceneBreaks: Array<{ start_s: number; end_s: number }> = [];
+        for (let w = 1; w < clipWords.length; w++) {
+          const gap = clipWords[w].start_s - clipWords[w - 1].end_s;
+          if (gap > 0.8) {
+            sceneBreaks.push({
+              start_s: clipWords[w - 1].end_s,
+              end_s: clipWords[w].start_s,
+            });
+          }
+        }
+
+        if (sceneBreaks.length > 0 && sceneBreaks.length <= 10) {
+          try {
+            const { applyTransitionsBetweenSegments } = await import("./transition-engine");
+            // Build segments from scene breaks
+            const segments: Array<{ start_s: number; end_s: number }> = [];
+            let segStart = 0;
+            for (const brk of sceneBreaks) {
+              segments.push({ start_s: segStart, end_s: brk.start_s });
+              segStart = brk.end_s;
+            }
+            segments.push({ start_s: segStart, end_s: clampedClip.duration_s });
+
+            const transitionedPath = path.join(workDir, `transitioned-clip-${i + 1}.mp4`);
+            await applyTransitionsBetweenSegments(editedPath, segments, transitionConfig, transitionedPath);
+            const tStat = await fs.stat(transitionedPath);
+            if (tStat.size > 1000) {
+              editedPath = transitionedPath;
+              console.log(`[Pipeline] Applied ${sceneBreaks.length} transitions to clip ${i + 1}`);
+            }
+          } catch (err) {
+            console.error(`[Pipeline] Transition application failed for clip ${i + 1}:`, err);
+          }
+        }
+      }
+
       // ── Skill 2: Moment detection → drives zoom, speed, and optional Remotion overlays ──
       let renderedAnimations: Awaited<ReturnType<typeof renderAnimations>> = [];
       let detectedMoments: Awaited<ReturnType<typeof detectShowMoments>> = [];
