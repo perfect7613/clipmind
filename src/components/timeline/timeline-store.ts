@@ -1,5 +1,10 @@
 import { create } from "zustand";
 
+export interface BeatMarker {
+  timeS: number;
+  energy: number; // 0-1 normalized
+}
+
 export interface CutPoint {
   start_s: number;
   end_s: number;
@@ -45,6 +50,10 @@ export interface TimelineState {
   playheadS: number;
   undoStack: UndoSnapshot[];
   redoStack: UndoSnapshot[];
+  aiPromptVisible: boolean;
+  beatMarkers: BeatMarker[];
+  beatsVisible: boolean;
+  beatsLoading: boolean;
 
   // Actions
   loadTimeline: (clipId: string, data: Record<string, unknown>) => void;
@@ -59,10 +68,16 @@ export interface TimelineState {
   setTimelineZoom: (zoom: number) => void;
   splitAtPlayhead: () => void;
   deleteSegment: (id: string) => void;
+  moveSegment: (fromIndex: number, toIndex: number) => void;
   pushUndo: () => void;
   undo: () => void;
   redo: () => void;
   reset: () => void;
+  showAiPrompt: () => void;
+  hideAiPrompt: () => void;
+  loadBeats: (clipId: string) => Promise<void>;
+  toggleBeatsVisible: () => void;
+  snapCutsToBeats: () => void;
 }
 
 const DEFAULT_EFFECTS: SegmentEffects = {
@@ -106,6 +121,10 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
   playheadS: 0,
   undoStack: [],
   redoStack: [],
+  aiPromptVisible: false,
+  beatMarkers: [],
+  beatsVisible: false,
+  beatsLoading: false,
 
   loadTimeline: (clipId, data: Record<string, unknown>) => {
     const timeline = (data.timeline || {}) as Record<string, unknown>;
@@ -264,6 +283,37 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
     });
   },
 
+  moveSegment: (fromIndex, toIndex) => {
+    const state = get();
+    if (
+      fromIndex < 0 || fromIndex >= state.segments.length ||
+      toIndex < 0 || toIndex >= state.segments.length ||
+      fromIndex === toIndex
+    ) return;
+
+    state.pushUndo();
+
+    const newSegments = [...state.segments];
+    const [moved] = newSegments.splice(fromIndex, 1);
+    newSegments.splice(toIndex, 0, moved);
+
+    // Recalculate start_s/end_s sequentially, preserving each segment's duration
+    let cursor = 0;
+    for (let i = 0; i < newSegments.length; i++) {
+      const duration = newSegments[i].end_s - newSegments[i].start_s;
+      newSegments[i] = { ...newSegments[i], start_s: cursor, end_s: cursor + duration };
+      cursor += duration;
+    }
+
+    const cutPoints = newSegments.map((s) => ({ start_s: s.start_s, end_s: s.end_s }));
+
+    set({
+      segments: newSegments,
+      cutPoints,
+      isModified: true,
+    });
+  },
+
   pushUndo: () =>
     set((state) => ({
       undoStack: [...state.undoStack.slice(-49), snapshot(state)],
@@ -326,5 +376,93 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
       playheadS: 0,
       undoStack: [],
       redoStack: [],
+      aiPromptVisible: false,
+      beatMarkers: [],
+      beatsVisible: false,
+      beatsLoading: false,
     }),
+
+  showAiPrompt: () => set({ aiPromptVisible: true }),
+  hideAiPrompt: () => set({ aiPromptVisible: false }),
+
+  loadBeats: async (clipId: string) => {
+    set({ beatsLoading: true });
+    try {
+      const res = await fetch(`/api/clips/${clipId}/beats`);
+      if (!res.ok) throw new Error("Failed to load beats");
+      const data = await res.json();
+      set({ beatMarkers: data.beats || [], beatsLoading: false, beatsVisible: true });
+    } catch (err) {
+      console.error("Beat detection failed:", err);
+      set({ beatsLoading: false });
+    }
+  },
+
+  toggleBeatsVisible: () =>
+    set((state) => ({ beatsVisible: !state.beatsVisible })),
+
+  snapCutsToBeats: () => {
+    const state = get();
+    if (state.beatMarkers.length === 0 || state.segments.length <= 1) return;
+
+    state.pushUndo();
+
+    const beats = state.beatMarkers;
+    const snapRadius = 0.5; // seconds
+
+    const newSegments = state.segments.map((seg, i) => {
+      const isFirst = i === 0;
+      const isLast = i === state.segments.length - 1;
+
+      let newStart = seg.start_s;
+      let newEnd = seg.end_s;
+
+      // Snap start (skip the very first segment's start)
+      if (!isFirst) {
+        const nearest = findNearestBeat(beats, seg.start_s);
+        if (nearest && Math.abs(nearest.timeS - seg.start_s) <= snapRadius) {
+          newStart = nearest.timeS;
+        }
+      }
+
+      // Snap end (skip the very last segment's end)
+      if (!isLast) {
+        const nearest = findNearestBeat(beats, seg.end_s);
+        if (nearest && Math.abs(nearest.timeS - seg.end_s) <= snapRadius) {
+          newEnd = nearest.timeS;
+        }
+      }
+
+      // Ensure start < end
+      if (newStart >= newEnd) return seg;
+
+      return { ...seg, start_s: newStart, end_s: newEnd };
+    });
+
+    // Reconcile adjacent segment boundaries — each boundary pair should match
+    for (let i = 1; i < newSegments.length; i++) {
+      newSegments[i] = { ...newSegments[i], start_s: newSegments[i - 1].end_s };
+    }
+
+    const cutPoints = newSegments.map((s) => ({ start_s: s.start_s, end_s: s.end_s }));
+
+    set({
+      segments: newSegments,
+      cutPoints,
+      isModified: true,
+    });
+  },
 }));
+
+function findNearestBeat(beats: BeatMarker[], time: number): BeatMarker | null {
+  let best: BeatMarker | null = null;
+  let bestDist = Infinity;
+  for (const b of beats) {
+    const d = Math.abs(b.timeS - time);
+    if (d < bestDist) {
+      bestDist = d;
+      best = b;
+    }
+  }
+  return best;
+}

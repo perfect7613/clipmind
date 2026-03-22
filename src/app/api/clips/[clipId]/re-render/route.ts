@@ -70,8 +70,9 @@ export async function POST(
           if (segments.length === 1) {
             // Single segment — render directly
             const seg = segments[0];
+            const segSource = seg.sourceVideoPath || sourceVideo;
             const outputPath = await renderClip(
-              sourceVideo,
+              segSource,
               {
                 clip_id: clipId,
                 title: clip.title || "Re-rendered",
@@ -101,8 +102,10 @@ export async function POST(
               const pct = 10 + Math.round((s / segments.length) * 60);
               send({ step: `rendering_segment_${s + 1}`, pct });
 
+              // Use per-segment source video if available (for added videos)
+              const segSource = seg.sourceVideoPath || sourceVideo;
               const segPath = await renderClip(
-                sourceVideo,
+                segSource,
                 {
                   clip_id: `${clipId}-seg-${s}`,
                   title: `Segment ${s + 1}`,

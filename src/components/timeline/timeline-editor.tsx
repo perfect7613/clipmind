@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState, useCallback } from "react";
 import { ThumbnailStrip } from "./thumbnail-strip";
 import { WaveformTrack } from "./waveform-track";
 import { EffectPanel } from "./effect-panel";
+import { AiPromptBox } from "./ai-prompt-box";
 import { useTimelineStore } from "./timeline-store";
 
 interface TimelineEditorProps {
@@ -65,6 +66,33 @@ function IconRedo() {
     </svg>
   );
 }
+function IconSparkle() {
+  return (
+    <svg viewBox="0 0 24 24" className="w-4 h-4" fill="currentColor">
+      <path d="M12 0L14.59 8.41L23 12L14.59 15.59L12 24L9.41 15.59L1 12L9.41 8.41Z" />
+    </svg>
+  );
+}
+function IconMusicNote() {
+  return (
+    <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 18V5l12-2v13" />
+      <circle cx="6" cy="18" r="3" />
+      <circle cx="18" cy="16" r="3" />
+    </svg>
+  );
+}
+function IconMagnet() {
+  return (
+    <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6 2v6a6 6 0 0 0 12 0V2" />
+      <line x1="6" y1="2" x2="6" y2="6" />
+      <line x1="18" y1="2" x2="18" y2="6" />
+      <line x1="2" y1="2" x2="10" y2="2" />
+      <line x1="14" y1="2" x2="22" y2="2" />
+    </svg>
+  );
+}
 
 /* ------------------------------------------------------------------ */
 /*  Playhead pulse animation (CSS-in-JS for the paused state)          */
@@ -97,6 +125,7 @@ export function TimelineEditor({ clipId, videoSrc }: TimelineEditorProps) {
   const [showEffects, setShowEffects] = useState(false);
   const [splitFlash, setSplitFlash] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [dragSegIdx, setDragSegIdx] = useState<number | null>(null);
 
   const {
     durationS,
@@ -119,6 +148,16 @@ export function TimelineEditor({ clipId, videoSrc }: TimelineEditorProps) {
     selectSegmentById,
     undo,
     redo,
+    moveSegment,
+    aiPromptVisible,
+    showAiPrompt,
+    hideAiPrompt,
+    beatMarkers,
+    beatsVisible,
+    beatsLoading,
+    loadBeats,
+    toggleBeatsVisible,
+    snapCutsToBeats,
   } = useTimelineStore();
 
   // Load timeline data
@@ -197,6 +236,15 @@ export function TimelineEditor({ clipId, videoSrc }: TimelineEditorProps) {
     }, 200);
   }, [selectedSegmentId, segments.length, deleteSegment]);
 
+  // Toggle beats — load on first click
+  const handleToggleBeats = useCallback(() => {
+    if (beatMarkers.length === 0 && !beatsLoading) {
+      loadBeats(clipId);
+    } else {
+      toggleBeatsVisible();
+    }
+  }, [beatMarkers.length, beatsLoading, loadBeats, clipId, toggleBeatsVisible]);
+
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -239,12 +287,27 @@ export function TimelineEditor({ clipId, videoSrc }: TimelineEditorProps) {
           e.preventDefault();
           frameStep(1);
           break;
+        case "b":
+        case "B":
+          if (!e.metaKey && !e.ctrlKey) {
+            e.preventDefault();
+            handleToggleBeats();
+          }
+          break;
+        case "/":
+          e.preventDefault();
+          if (aiPromptVisible) {
+            hideAiPrompt();
+          } else {
+            showAiPrompt();
+          }
+          break;
       }
     };
 
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [togglePlay, handleSplit, handleDelete, undo, redo, frameStep]);
+  }, [togglePlay, handleSplit, handleDelete, undo, redo, frameStep, aiPromptVisible, showAiPrompt, hideAiPrompt, handleToggleBeats]);
 
   // Toggle effects panel when segment is selected
   useEffect(() => {
@@ -480,6 +543,33 @@ export function TimelineEditor({ clipId, videoSrc }: TimelineEditorProps) {
           <IconRedo />
         </ToolbarButton>
 
+        {/* Divider */}
+        <div style={{ width: "1px", height: "20px", background: "#222", margin: "0 6px" }} />
+
+        {/* AI Prompt */}
+        <ToolbarButton onClick={showAiPrompt} title="AI Edit (/)" accent={aiPromptVisible}>
+          <IconSparkle />
+        </ToolbarButton>
+
+        {/* Divider */}
+        <div style={{ width: "1px", height: "20px", background: "#222", margin: "0 6px" }} />
+
+        {/* Beat Detection */}
+        <ToolbarButton onClick={handleToggleBeats} title="Toggle beats (B)" accent={beatsVisible}>
+          {beatsLoading ? (
+            <span style={{ fontSize: "10px", fontFamily: "'JetBrains Mono', monospace" }}>...</span>
+          ) : (
+            <IconMusicNote />
+          )}
+        </ToolbarButton>
+
+        {/* Snap to beats — only when beats are visible */}
+        {beatsVisible && beatMarkers.length > 0 && (
+          <ToolbarButton onClick={snapCutsToBeats} title="Snap cuts to beats">
+            <IconMagnet />
+          </ToolbarButton>
+        )}
+
         {/* Spacer */}
         <div className="flex-1" />
 
@@ -539,6 +629,9 @@ export function TimelineEditor({ clipId, videoSrc }: TimelineEditorProps) {
         </div>
       )}
 
+      {/* ── AI Prompt Box ──────────────────────────────── */}
+      <AiPromptBox clipId={clipId} visible={aiPromptVisible} onClose={hideAiPrompt} />
+
       {/* ── Timeline Area (with effects panel overlay) ──── */}
       <div className="relative">
         {/* Split flash overlay */}
@@ -579,6 +672,8 @@ export function TimelineEditor({ clipId, videoSrc }: TimelineEditorProps) {
               timelineZoom={timelineZoom}
               onZoomChange={setTimelineZoom}
               cutPoints={cutPoints}
+              beatMarkers={beatMarkers}
+              beatsVisible={beatsVisible}
             />
 
             {/* Segment labels row */}
@@ -590,9 +685,16 @@ export function TimelineEditor({ clipId, videoSrc }: TimelineEditorProps) {
                   const isSelected = seg.id === selectedSegmentId;
                   const isDeleting = seg.id === deletingId;
 
+                  const isDragging = dragSegIdx === i;
+
                   return (
                     <div
                       key={seg.id}
+                      draggable
+                      onDragStart={() => setDragSegIdx(i)}
+                      onDragOver={(e) => { e.preventDefault(); }}
+                      onDrop={() => { if (dragSegIdx !== null && dragSegIdx !== i) moveSegment(dragSegIdx, i); setDragSegIdx(null); }}
+                      onDragEnd={() => setDragSegIdx(null)}
                       className="absolute top-0 h-full flex items-center justify-center cursor-pointer"
                       style={{
                         left: `${leftPct}%`,
@@ -605,6 +707,9 @@ export function TimelineEditor({ clipId, videoSrc }: TimelineEditorProps) {
                         transition: "all 150ms",
                         animation: isDeleting ? "segment-delete 200ms ease-out forwards" : undefined,
                         transformOrigin: "center",
+                        boxShadow: isDragging ? "0 0 8px 2px rgba(232, 98, 14, 0.6)" : undefined,
+                        border: isDragging ? "1px solid rgba(232, 98, 14, 0.8)" : undefined,
+                        opacity: isDragging ? 0.7 : 1,
                       }}
                       onClick={() => selectSegmentById(seg.id)}
                     >
@@ -689,6 +794,8 @@ export function TimelineEditor({ clipId, videoSrc }: TimelineEditorProps) {
           ["\u232B", "Delete"],
           ["\u2318Z", "Undo"],
           ["\u2190\u2192", "Step"],
+          ["B", "Beats"],
+          ["/", "AI"],
         ].map(([key, label]) => (
           <span key={key} style={{ fontSize: "9px", color: "#333", fontFamily: "'JetBrains Mono', monospace" }}>
             <span style={{ color: "#444", background: "#1a1a1a", padding: "1px 4px", borderRadius: "2px", marginRight: "3px" }}>

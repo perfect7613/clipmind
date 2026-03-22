@@ -76,7 +76,7 @@ export function EffectPanel({ visible }: EffectPanelProps) {
           </label>
           <div className="flex gap-2">
             {COLOR_PROFILES.map((p) => {
-              const isActive = effects.colorProfile === p.id;
+              const isActive = selectedSegment?.effects.colorProfile === p.id;
               return (
                 <button
                   key={p.id}
@@ -118,29 +118,29 @@ export function EffectPanel({ visible }: EffectPanelProps) {
           <div className="grid grid-cols-2 gap-1.5">
             <CompactToggle
               label="Vignette"
-              active={effects.vignette}
-              onToggle={() => updateEffects({ vignette: !effects.vignette })}
+              active={selectedSegment?.effects.vignette ?? false}
+              onToggle={() => updateEffects({ vignette: !selectedSegment?.effects.vignette })}
             />
             <CompactToggle
               label="Film Grain"
-              active={effects.filmGrain}
-              onToggle={() => updateEffects({ filmGrain: !effects.filmGrain })}
+              active={selectedSegment?.effects.filmGrain ?? false}
+              onToggle={() => updateEffects({ filmGrain: !selectedSegment?.effects.filmGrain })}
             />
             <CompactToggle
               label="Zoom"
-              active={effects.zoom}
-              onToggle={() => updateEffects({ zoom: !effects.zoom })}
+              active={selectedSegment?.effects.zoom ?? false}
+              onToggle={() => updateEffects({ zoom: !selectedSegment?.effects.zoom })}
             />
             <CompactToggle
               label="Speed"
-              active={effects.speedRamp}
-              onToggle={() => updateEffects({ speedRamp: !effects.speedRamp })}
+              active={selectedSegment?.effects.speedRamp ?? false}
+              onToggle={() => updateEffects({ speedRamp: !selectedSegment?.effects.speedRamp })}
             />
           </div>
         </div>
 
         {/* Speed slider (when enabled) */}
-        {effects.speedRamp && (
+        {selectedSegment?.effects.speedRamp && (
           <div className="space-y-1">
             <div className="flex justify-between">
               <label
@@ -153,7 +153,7 @@ export function EffectPanel({ visible }: EffectPanelProps) {
                 className="text-xs"
                 style={{ color: "#E8620E", fontFamily: "'JetBrains Mono', monospace" }}
               >
-                {effects.speedFactor.toFixed(1)}x
+                {selectedSegment?.effects.speedFactor.toFixed(1)}x
               </span>
             </div>
             <input
@@ -161,7 +161,7 @@ export function EffectPanel({ visible }: EffectPanelProps) {
               min={0.5}
               max={2.0}
               step={0.1}
-              value={effects.speedFactor}
+              value={selectedSegment?.effects.speedFactor ?? 1.0}
               onChange={(e) => updateEffects({ speedFactor: parseFloat(e.target.value) })}
               className="w-full"
               style={{ accentColor: "#E8620E" }}
@@ -179,7 +179,7 @@ export function EffectPanel({ visible }: EffectPanelProps) {
           </label>
           <div className="grid grid-cols-2 gap-1.5">
             {TRANSITION_TYPES.map((t) => {
-              const isActive = effects.transitionType === t.id;
+              const isActive = selectedSegment?.effects.transitionType === t.id;
               return (
                 <button
                   key={t.id}

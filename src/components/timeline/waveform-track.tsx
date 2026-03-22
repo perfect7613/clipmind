@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useCallback } from "react";
-import type { Segment } from "./timeline-store";
+import type { Segment, BeatMarker } from "./timeline-store";
 
 interface WaveformTrackProps {
   clipId: string;
@@ -14,6 +14,8 @@ interface WaveformTrackProps {
   timelineZoom: number;
   onZoomChange: (zoom: number) => void;
   cutPoints: Array<{ start_s: number; end_s: number }>;
+  beatMarkers?: BeatMarker[];
+  beatsVisible?: boolean;
 }
 
 export function WaveformTrack({
@@ -27,6 +29,8 @@ export function WaveformTrack({
   timelineZoom,
   onZoomChange,
   cutPoints,
+  beatMarkers = [],
+  beatsVisible = false,
 }: WaveformTrackProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -180,6 +184,24 @@ export function WaveformTrack({
                 background: bg,
                 borderLeft: i > 0 ? "1px solid rgba(232, 98, 14, 0.3)" : undefined,
                 zIndex: 2,
+              }}
+            />
+          );
+        })}
+
+        {/* Beat markers */}
+        {beatsVisible && beatMarkers.map((beat, i) => {
+          const leftPct = durationS > 0 ? (beat.timeS / durationS) * 100 : 0;
+          const opacity = 0.3 + beat.energy * 0.7;
+          return (
+            <div
+              key={`beat-${i}`}
+              className="absolute top-0 h-full pointer-events-none"
+              style={{
+                left: `${leftPct}%`,
+                width: "1px",
+                background: `rgba(255, 180, 0, ${opacity})`,
+                zIndex: 4,
               }}
             />
           );
