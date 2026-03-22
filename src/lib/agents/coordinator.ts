@@ -142,15 +142,6 @@ export async function runPipeline(
       const clip = validClips[i];
       const clipPctBase = 40 + Math.round((i / validClips.length) * 50);
 
-      // Build clip-relative word timestamps (needed by both Skill 1 and Skill 2)
-      const clipWords = transcript.words
-        .filter((w) => w.start_s >= clampedClip.start_s && w.end_s <= clampedClip.end_s)
-        .map((w) => ({
-          ...w,
-          start_s: w.start_s - clampedClip.start_s,
-          end_s: w.end_s - clampedClip.start_s,
-        }));
-
       // Clamp clip to video duration
       const clampedClip = {
         ...clip,
@@ -162,6 +153,15 @@ export async function runPipeline(
         console.warn(`[Pipeline] Clip ${i + 1} too short after clamping (${clampedClip.duration_s.toFixed(1)}s), skipping`);
         continue;
       }
+
+      // Build clip-relative word timestamps (needed by both Skill 1 and Skill 2)
+      const clipWords = transcript.words
+        .filter((w) => w.start_s >= clampedClip.start_s && w.end_s <= clampedClip.end_s)
+        .map((w) => ({
+          ...w,
+          start_s: w.start_s - clampedClip.start_s,
+          end_s: w.end_s - clampedClip.start_s,
+        }));
 
       // ── Skill 1: Render edited clip (FFmpeg: zoom, color, grain, vignette, audio) ──
       onProgress?.(`rendering_clip_${i + 1}`, clipPctBase);
