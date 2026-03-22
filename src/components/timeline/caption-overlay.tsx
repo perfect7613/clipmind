@@ -17,14 +17,6 @@ interface CaptionOverlayProps {
   containerRef: React.RefObject<HTMLDivElement | null>;
 }
 
-/**
- * Real-time caption overlay rendered as HTML on top of the <video> element.
- * Synced to video.currentTime. Draggable to reposition.
- * Styled based on the segment's CaptionStyle settings.
- *
- * This replaces FFmpeg ASS burn-in for the preview.
- * Captions are only burned into pixels on final export/download.
- */
 export function CaptionOverlay({
   captions,
   currentTime,
@@ -32,69 +24,10 @@ export function CaptionOverlay({
   onStyleChange,
   containerRef,
 }: CaptionOverlayProps) {
+  // ALL hooks must be called unconditionally — before any returns
   const [isDragging, setIsDragging] = useState(false);
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [customPosition, setCustomPosition] = useState<{ x: number; y: number } | null>(null);
   const captionRef = useRef<HTMLDivElement>(null);
-
-  if (style.enabled === false) return null;
-
-  // Find the active caption for the current time
-  const activeCaption = captions.find(
-    (c) => currentTime >= c.start_s && currentTime < c.end_s
-  );
-
-  if (!activeCaption) return null;
-
-  // Position based on style.position or custom drag position
-  const positionStyle: React.CSSProperties = {};
-  if (customPosition) {
-    positionStyle.left = `${customPosition.x}%`;
-    positionStyle.top = `${customPosition.y}%`;
-    positionStyle.transform = "translate(-50%, -50%)";
-  } else {
-    positionStyle.left = "50%";
-    positionStyle.transform = "translateX(-50%)";
-    if (style.position === "top") {
-      positionStyle.top = "8%";
-    } else if (style.position === "center") {
-      positionStyle.top = "50%";
-      positionStyle.transform = "translate(-50%, -50%)";
-    } else {
-      positionStyle.bottom = "8%";
-    }
-  }
-
-  // Font size
-  const fontSizeMap = { small: "clamp(12px, 2.5vw, 18px)", medium: "clamp(16px, 3.5vw, 28px)", large: "clamp(22px, 5vw, 42px)" };
-  const fontSize = fontSizeMap[style.fontSize] || fontSizeMap.medium;
-
-  // Background
-  const bgMap = {
-    none: "transparent",
-    "dark-bar": "rgba(0,0,0,0.7)",
-    pill: "rgba(0,0,0,0.6)",
-    "full-width": "rgba(0,0,0,0.75)",
-  };
-  const bg = bgMap[style.background] || bgMap["dark-bar"];
-
-  // Casing
-  const textTransform = style.casing === "upper" ? "uppercase" as const :
-    style.casing === "lower" ? "lowercase" as const :
-    style.casing === "title" ? "capitalize" as const : "none" as const;
-
-  // Drag handlers
-  const handleMouseDown = (e: React.MouseEvent) => {
-    if (!containerRef.current) return;
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(true);
-    const rect = containerRef.current.getBoundingClientRect();
-    setDragOffset({
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
-    });
-  };
 
   const handleMouseMove = useCallback(
     (e: MouseEvent) => {
@@ -113,7 +46,6 @@ export function CaptionOverlay({
   const handleMouseUp = useCallback(() => {
     if (!isDragging) return;
     setIsDragging(false);
-    // Snap to named position based on Y
     if (customPosition) {
       if (customPosition.y < 25) {
         onStyleChange({ position: "top" });
@@ -122,11 +54,10 @@ export function CaptionOverlay({
       } else {
         onStyleChange({ position: "center" });
       }
-      setCustomPosition(null); // Reset to named position
+      setCustomPosition(null);
     }
   }, [isDragging, customPosition, onStyleChange]);
 
-  // Global mouse listeners for drag
   useEffect(() => {
     if (isDragging) {
       window.addEventListener("mousemove", handleMouseMove);
@@ -137,6 +68,51 @@ export function CaptionOverlay({
       };
     }
   }, [isDragging, handleMouseMove, handleMouseUp]);
+
+  // Now safe to do conditional rendering
+  if (style.enabled === false) return null;
+
+  const activeCaption = captions.find(
+    (c) => currentTime >= c.start_s && currentTime < c.end_s
+  );
+  if (!activeCaption) return null;
+
+  // Position
+  const positionStyle: React.CSSProperties = {};
+  if (customPosition) {
+    positionStyle.left = `${customPosition.x}%`;
+    positionStyle.top = `${customPosition.y}%`;
+    positionStyle.transform = "translate(-50%, -50%)";
+  } else {
+    positionStyle.left = "50%";
+    positionStyle.transform = "translateX(-50%)";
+    if (style.position === "top") {
+      positionStyle.top = "8%";
+    } else if (style.position === "center") {
+      positionStyle.top = "50%";
+      positionStyle.transform = "translate(-50%, -50%)";
+    } else {
+      positionStyle.bottom = "8%";
+    }
+  }
+
+  const fontSizeMap = { small: "clamp(12px, 2.5vw, 18px)", medium: "clamp(16px, 3.5vw, 28px)", large: "clamp(22px, 5vw, 42px)" };
+  const fontSize = fontSizeMap[style.fontSize] || fontSizeMap.medium;
+
+  const bgMap: Record<string, string> = {
+    none: "transparent",
+    "dark-bar": "rgba(0,0,0,0.7)",
+    pill: "rgba(0,0,0,0.6)",
+    "full-width": "rgba(0,0,0,0.75)",
+  };
+  const bg = bgMap[style.background] || bgMap["dark-bar"];
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (!containerRef.current) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
 
   return (
     <div
@@ -160,7 +136,7 @@ export function CaptionOverlay({
           fontSize,
           fontWeight: 700,
           color: style.color || "#FFFFFF",
-          textTransform,
+          textTransform: style.casing === "upper" ? "uppercase" : style.casing === "lower" ? "lowercase" : style.casing === "title" ? "capitalize" : undefined,
           padding: style.background === "full-width" ? "8px 24px" : "6px 18px",
           borderRadius: style.background === "pill" ? "999px" : style.background === "full-width" ? "0" : "6px",
           background: bg,
@@ -168,47 +144,10 @@ export function CaptionOverlay({
           fontFamily: "system-ui, -apple-system, sans-serif",
           letterSpacing: style.casing === "upper" ? "0.06em" : "0",
           lineHeight: 1.3,
-          whiteSpace: "pre-wrap",
-          wordBreak: "break-word",
         }}
       >
-        {applyTextCasing(activeCaption.text, style.casing)}
+        {activeCaption.text}
       </span>
-
-      {/* Drag hint — only shown on hover */}
-      {!isDragging && (
-        <div
-          style={{
-            position: "absolute",
-            top: "-18px",
-            left: "50%",
-            transform: "translateX(-50%)",
-            fontSize: "8px",
-            color: "#666",
-            fontFamily: "'JetBrains Mono', monospace",
-            opacity: 0,
-            transition: "opacity 0.2s",
-            pointerEvents: "none",
-          }}
-          className="caption-drag-hint"
-        >
-          drag to move
-        </div>
-      )}
-
-      <style>{`
-        .caption-drag-hint { opacity: 0 !important; }
-        div:hover > .caption-drag-hint { opacity: 1 !important; }
-      `}</style>
     </div>
   );
-}
-
-function applyTextCasing(text: string, casing: string): string {
-  switch (casing) {
-    case "upper": return text.toUpperCase();
-    case "lower": return text.toLowerCase();
-    case "title": return text.replace(/\b\w/g, (c) => c.toUpperCase());
-    default: return text.charAt(0).toUpperCase() + text.slice(1);
-  }
 }
