@@ -384,6 +384,53 @@ export function TimelineEditor({ clipId, videoSrc }: TimelineEditorProps) {
 
   const speeds = [0.5, 0.75, 1, 1.5, 2];
 
+  // ── Real-time CSS preview of effects on the video ──
+  // Compute CSS transform/filter from the current segment's effects
+  const currentSegment = segments.find((s) => currentTime >= s.start_s && currentTime <= s.end_s)
+    || segments.find((s) => s.id === selectedSegmentId);
+
+  const previewStyle: React.CSSProperties = {};
+  if (currentSegment) {
+    const fx = currentSegment.effects;
+    const transforms: string[] = [];
+    const filters: string[] = [];
+
+    // Zoom preview — CSS scale
+    if (fx.zoom) {
+      const zoomScale = fx.zoomLevel === "tight" ? 1.15 : 1.1;
+      transforms.push(`scale(${zoomScale})`);
+    }
+
+    // Color grading preview — CSS filter approximations
+    if (fx.colorProfile === "warm") {
+      filters.push("sepia(0.15)", "saturate(1.1)");
+    } else if (fx.colorProfile === "cool") {
+      filters.push("hue-rotate(10deg)", "saturate(0.95)");
+    } else if (fx.colorProfile === "cinematic") {
+      filters.push("contrast(1.15)", "saturate(0.9)", "brightness(0.95)");
+    } else if (fx.colorProfile === "bw") {
+      filters.push("grayscale(1)", "contrast(1.3)");
+    } else if (fx.colorProfile === "vintage") {
+      filters.push("sepia(0.25)", "saturate(0.7)", "contrast(1.05)");
+    } else if (fx.colorProfile === "neon") {
+      filters.push("saturate(1.5)", "contrast(1.2)", "brightness(0.95)");
+    }
+
+    // Vignette preview — box shadow inset
+    // (handled separately as an overlay div)
+
+    // Film grain — handled as an overlay
+
+    // Speed preview — playback rate
+    if (fx.speedRamp && fx.speedFactor !== playbackRate) {
+      // Don't auto-change playback rate — just show indicator
+    }
+
+    if (transforms.length > 0) previewStyle.transform = transforms.join(" ");
+    if (filters.length > 0) previewStyle.filter = filters.join(" ");
+    previewStyle.transition = "transform 0.4s ease, filter 0.4s ease";
+  }
+
   return (
     <div
       className="relative flex flex-col w-full select-none"
@@ -395,13 +442,18 @@ export function TimelineEditor({ clipId, videoSrc }: TimelineEditorProps) {
     >
       <style>{PULSE_KEYFRAMES}</style>
 
-      {/* ── Video Player ─────────────────────────────────── */}
+      {/* ── Video Player with real-time effect preview ──── */}
       <div className="relative overflow-hidden" style={{ background: "#000" }}>
         <video
           ref={videoRef}
           src={videoSrc}
           className="w-full"
-          style={{ aspectRatio: "16/9", display: "block" }}
+          style={{
+            aspectRatio: "16/9",
+            display: "block",
+            transformOrigin: "center center",
+            ...previewStyle,
+          }}
           onTimeUpdate={handleTimeUpdate}
           onPlay={() => setIsPlaying(true)}
           onPause={() => setIsPlaying(false)}
@@ -409,6 +461,54 @@ export function TimelineEditor({ clipId, videoSrc }: TimelineEditorProps) {
             if (videoRef.current) setCurrentTime(0);
           }}
         />
+
+        {/* Vignette overlay preview */}
+        {currentSegment?.effects.vignette && (
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              background: "radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.5) 100%)",
+              transition: "opacity 0.4s ease",
+            }}
+          />
+        )}
+
+        {/* Film grain overlay preview */}
+        {currentSegment?.effects.filmGrain && (
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.15'/%3E%3C/svg%3E")`,
+              opacity: 0.3,
+              mixBlendMode: "overlay",
+              transition: "opacity 0.4s ease",
+            }}
+          />
+        )}
+
+        {/* Active effects badge */}
+        {currentSegment && (currentSegment.effects.zoom || currentSegment.effects.colorProfile !== "neutral" || currentSegment.effects.vignette || currentSegment.effects.filmGrain) && (
+          <div
+            className="absolute top-3 right-3 flex gap-1"
+            style={{ zIndex: 20 }}
+          >
+            {currentSegment.effects.zoom && (
+              <span style={{ fontSize: "9px", background: "rgba(232,98,14,0.8)", color: "#fff", padding: "2px 6px", borderRadius: "3px", fontFamily: "'JetBrains Mono', monospace" }}>
+                ZOOM {currentSegment.effects.zoomLevel === "tight" ? "1.15x" : "1.1x"}
+              </span>
+            )}
+            {currentSegment.effects.colorProfile !== "neutral" && (
+              <span style={{ fontSize: "9px", background: "rgba(255,255,255,0.15)", color: "#ccc", padding: "2px 6px", borderRadius: "3px", fontFamily: "'JetBrains Mono', monospace", backdropFilter: "blur(4px)" }}>
+                {currentSegment.effects.colorProfile.toUpperCase()}
+              </span>
+            )}
+            {currentSegment.effects.speedRamp && (
+              <span style={{ fontSize: "9px", background: "rgba(59,130,246,0.8)", color: "#fff", padding: "2px 6px", borderRadius: "3px", fontFamily: "'JetBrains Mono', monospace" }}>
+                {currentSegment.effects.speedFactor}x
+              </span>
+            )}
+          </div>
+        )}
 
         {/* Click overlay */}
         <button
