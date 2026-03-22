@@ -1,9 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import { ThumbnailStrip } from "./thumbnail-strip";
 import { WaveformTrack } from "./waveform-track";
 import { EffectPanel } from "./effect-panel";
@@ -14,20 +11,114 @@ interface TimelineEditorProps {
   videoSrc: string;
 }
 
+/* ------------------------------------------------------------------ */
+/*  SVG Icon helpers                                                   */
+/* ------------------------------------------------------------------ */
+
+function IconPlay() {
+  return (
+    <svg viewBox="0 0 24 24" className="w-4 h-4 fill-current">
+      <polygon points="6,3 20,12 6,21" />
+    </svg>
+  );
+}
+function IconPause() {
+  return (
+    <svg viewBox="0 0 24 24" className="w-4 h-4 fill-current">
+      <rect x="5" y="3" width="4" height="18" />
+      <rect x="15" y="3" width="4" height="18" />
+    </svg>
+  );
+}
+function IconScissors() {
+  return (
+    <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="6" cy="6" r="3" />
+      <circle cx="6" cy="18" r="3" />
+      <line x1="20" y1="4" x2="8.12" y2="15.88" />
+      <line x1="14.47" y1="14.48" x2="20" y2="20" />
+      <line x1="8.12" y1="8.12" x2="12" y2="12" />
+    </svg>
+  );
+}
+function IconTrash() {
+  return (
+    <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="3,6 5,6 21,6" />
+      <path d="M19,6v14a2,2,0,0,1-2,2H7a2,2,0,0,1-2-2V6m3,0V4a2,2,0,0,1,2-2h4a2,2,0,0,1,2,2v2" />
+    </svg>
+  );
+}
+function IconUndo() {
+  return (
+    <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="1,4 1,10 7,10" />
+      <path d="M3.51,15a9,9,0,1,0,2.13-9.36L1,10" />
+    </svg>
+  );
+}
+function IconRedo() {
+  return (
+    <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="23,4 23,10 17,10" />
+      <path d="M20.49,15a9,9,0,1,1-2.12-9.36L23,10" />
+    </svg>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Playhead pulse animation (CSS-in-JS for the paused state)          */
+/* ------------------------------------------------------------------ */
+
+const PULSE_KEYFRAMES = `
+@keyframes playhead-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+@keyframes segment-delete {
+  from { transform: scaleX(1); opacity: 1; }
+  to { transform: scaleX(0); opacity: 0; }
+}
+@keyframes split-flash {
+  0% { background: rgba(232, 98, 14, 0.6); }
+  100% { background: transparent; }
+}
+`;
+
+/* ------------------------------------------------------------------ */
+/*  Main component                                                     */
+/* ------------------------------------------------------------------ */
+
 export function TimelineEditor({ clipId, videoSrc }: TimelineEditorProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [playbackRate, setPlaybackRate] = useState(1);
+  const [showEffects, setShowEffects] = useState(false);
+  const [splitFlash, setSplitFlash] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const {
     durationS,
     cutPoints,
     effects,
+    segments,
+    selectedSegmentId,
     isModified,
     isExporting,
     exportProgress,
+    timelineZoom,
+    undoStack,
+    redoStack,
     loadTimeline,
     setExporting,
+    setPlayhead,
+    setTimelineZoom,
+    splitAtPlayhead,
+    deleteSegment,
+    selectSegmentById,
+    undo,
+    redo,
   } = useTimelineStore();
 
   // Load timeline data
@@ -38,19 +129,25 @@ export function TimelineEditor({ clipId, videoSrc }: TimelineEditorProps) {
       .catch(() => {});
   }, [clipId, loadTimeline]);
 
-  // Sync video time with state
+  // Sync video time
   const handleTimeUpdate = useCallback(() => {
     if (videoRef.current) {
-      setCurrentTime(videoRef.current.currentTime);
+      const t = videoRef.current.currentTime;
+      setCurrentTime(t);
+      setPlayhead(t);
     }
-  }, []);
+  }, [setPlayhead]);
 
-  const handleSeek = useCallback((time: number) => {
-    if (videoRef.current) {
-      videoRef.current.currentTime = time;
-      setCurrentTime(time);
-    }
-  }, []);
+  const handleSeek = useCallback(
+    (time: number) => {
+      if (videoRef.current) {
+        videoRef.current.currentTime = time;
+        setCurrentTime(time);
+        setPlayhead(time);
+      }
+    },
+    [setPlayhead]
+  );
 
   const togglePlay = useCallback(() => {
     if (!videoRef.current) return;
@@ -63,13 +160,103 @@ export function TimelineEditor({ clipId, videoSrc }: TimelineEditorProps) {
     }
   }, []);
 
-  // Export: save timeline + trigger re-render
+  const changeSpeed = useCallback((rate: number) => {
+    setPlaybackRate(rate);
+    if (videoRef.current) {
+      videoRef.current.playbackRate = rate;
+    }
+  }, []);
+
+  // Frame step (1/30 second)
+  const frameStep = useCallback(
+    (direction: 1 | -1) => {
+      if (videoRef.current) {
+        const t = videoRef.current.currentTime + direction * (1 / 30);
+        videoRef.current.currentTime = Math.max(0, Math.min(durationS, t));
+        setCurrentTime(videoRef.current.currentTime);
+        setPlayhead(videoRef.current.currentTime);
+      }
+    },
+    [durationS, setPlayhead]
+  );
+
+  // Split with flash effect
+  const handleSplit = useCallback(() => {
+    splitAtPlayhead();
+    setSplitFlash(true);
+    setTimeout(() => setSplitFlash(false), 300);
+  }, [splitAtPlayhead]);
+
+  // Delete with animation
+  const handleDelete = useCallback(() => {
+    if (!selectedSegmentId || segments.length <= 1) return;
+    setDeletingId(selectedSegmentId);
+    setTimeout(() => {
+      deleteSegment(selectedSegmentId);
+      setDeletingId(null);
+    }, 200);
+  }, [selectedSegmentId, segments.length, deleteSegment]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      // Don't capture when typing in inputs
+      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA") return;
+
+      switch (e.key) {
+        case " ":
+          e.preventDefault();
+          togglePlay();
+          break;
+        case "s":
+        case "S":
+          if (!e.metaKey && !e.ctrlKey) {
+            e.preventDefault();
+            handleSplit();
+          }
+          break;
+        case "Backspace":
+        case "Delete":
+          e.preventDefault();
+          handleDelete();
+          break;
+        case "z":
+          if (e.metaKey || e.ctrlKey) {
+            e.preventDefault();
+            if (e.shiftKey) {
+              redo();
+            } else {
+              undo();
+            }
+          }
+          break;
+        case "ArrowLeft":
+          e.preventDefault();
+          frameStep(-1);
+          break;
+        case "ArrowRight":
+          e.preventDefault();
+          frameStep(1);
+          break;
+      }
+    };
+
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [togglePlay, handleSplit, handleDelete, undo, redo, frameStep]);
+
+  // Toggle effects panel when segment is selected
+  useEffect(() => {
+    setShowEffects(!!selectedSegmentId);
+  }, [selectedSegmentId]);
+
+  // Export
   const handleExport = async () => {
     if (!isModified) return;
     setExporting(true, 0);
 
     try {
-      // Save timeline state
       await fetch(`/api/clips/${clipId}/timeline`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -80,15 +267,18 @@ export function TimelineEditor({ clipId, videoSrc }: TimelineEditorProps) {
 
       setExporting(true, 20);
 
-      // Trigger re-render via SSE
       const response = await fetch(`/api/clips/${clipId}/re-render`, { method: "POST" });
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
 
       if (reader) {
-        while (true) {
+        let reading = true;
+        while (reading) {
           const { done, value } = await reader.read();
-          if (done) break;
+          if (done) {
+            reading = false;
+            break;
+          }
 
           const text = decoder.decode(value);
           const lines = text.split("\n").filter((l) => l.startsWith("data: "));
@@ -98,7 +288,6 @@ export function TimelineEditor({ clipId, videoSrc }: TimelineEditorProps) {
               if (data.pct) setExporting(true, data.pct);
               if (data.step === "completed") {
                 setExporting(false);
-                // Refresh video source
                 if (videoRef.current) {
                   videoRef.current.src = videoSrc + "?t=" + Date.now();
                   videoRef.current.load();
@@ -107,7 +296,9 @@ export function TimelineEditor({ clipId, videoSrc }: TimelineEditorProps) {
               if (data.step === "failed") {
                 setExporting(false);
               }
-            } catch { /* ignore parse errors */ }
+            } catch {
+              /* ignore */
+            }
           }
         }
       }
@@ -116,89 +307,390 @@ export function TimelineEditor({ clipId, videoSrc }: TimelineEditorProps) {
     }
   };
 
+  const speeds = [0.5, 0.75, 1, 1.5, 2];
+
   return (
-    <div className="space-y-3">
-      {/* Video Player */}
-      <div className="relative bg-black rounded-lg overflow-hidden">
+    <div
+      className="relative flex flex-col w-full select-none"
+      style={{
+        background: "#0a0a0a",
+        color: "#e5e5e5",
+        fontFamily: "system-ui, sans-serif",
+      }}
+    >
+      <style>{PULSE_KEYFRAMES}</style>
+
+      {/* ── Video Player ─────────────────────────────────── */}
+      <div className="relative overflow-hidden" style={{ background: "#000" }}>
         <video
           ref={videoRef}
           src={videoSrc}
-          className="w-full aspect-video"
+          className="w-full"
+          style={{ aspectRatio: "16/9", display: "block" }}
           onTimeUpdate={handleTimeUpdate}
           onPlay={() => setIsPlaying(true)}
           onPause={() => setIsPlaying(false)}
           onLoadedMetadata={() => {
-            if (videoRef.current) {
-              setCurrentTime(0);
-            }
+            if (videoRef.current) setCurrentTime(0);
           }}
         />
 
-        {/* Play/Pause overlay */}
+        {/* Click overlay */}
         <button
           onClick={togglePlay}
-          className="absolute inset-0 flex items-center justify-center bg-black/0 hover:bg-black/20 transition-colors"
+          className="absolute inset-0 w-full h-full"
+          style={{
+            background: "transparent",
+            border: "none",
+            cursor: "pointer",
+            transition: "background 150ms",
+          }}
+          onMouseEnter={(e) => { (e.currentTarget.style.background) = "rgba(0,0,0,0.1)"; }}
+          onMouseLeave={(e) => { (e.currentTarget.style.background) = "transparent"; }}
         >
           {!isPlaying && (
-            <div className="w-16 h-16 rounded-full bg-black/50 flex items-center justify-center">
-              <svg viewBox="0 0 24 24" className="w-8 h-8 text-white fill-current ml-1">
-                <polygon points="5,3 19,12 5,21" />
+            <div
+              className="flex items-center justify-center"
+              style={{
+                width: "56px",
+                height: "56px",
+                borderRadius: "50%",
+                background: "rgba(0,0,0,0.6)",
+                margin: "auto",
+                backdropFilter: "blur(4px)",
+              }}
+            >
+              <svg viewBox="0 0 24 24" style={{ width: "24px", height: "24px", fill: "#fff", marginLeft: "2px" }}>
+                <polygon points="6,3 20,12 6,21" />
               </svg>
             </div>
           )}
         </button>
-      </div>
 
-      {/* Time display */}
-      <div className="flex items-center justify-between text-xs text-muted-foreground px-1">
-        <span>{formatTime(currentTime)}</span>
-        <div className="flex items-center gap-2">
-          {isModified && <Badge variant="outline" className="text-xs">Unsaved changes</Badge>}
-          <span>{formatTime(durationS)}</span>
-        </div>
-      </div>
-
-      {/* Thumbnail Strip */}
-      <ThumbnailStrip
-        clipId={clipId}
-        durationS={durationS}
-        currentTime={currentTime}
-        onSeek={handleSeek}
-      />
-
-      {/* Waveform */}
-      <WaveformTrack
-        clipId={clipId}
-        durationS={durationS}
-        currentTime={currentTime}
-        onSeek={handleSeek}
-        cutPoints={cutPoints}
-      />
-
-      {/* Effects Panel */}
-      <EffectPanel />
-
-      {/* Export Bar */}
-      <div className="flex items-center gap-3">
-        <Button
-          onClick={handleExport}
-          disabled={!isModified || isExporting}
-          className="flex-1"
+        {/* Time code overlay — bottom left */}
+        <div
+          className="absolute bottom-3 left-3 px-2 py-1"
+          style={{
+            background: "rgba(0,0,0,0.7)",
+            borderRadius: "4px",
+            fontFamily: "'JetBrains Mono', monospace",
+            fontSize: "12px",
+            color: "#ccc",
+            backdropFilter: "blur(4px)",
+            letterSpacing: "0.05em",
+          }}
         >
-          {isExporting ? "Exporting..." : isModified ? "Export Changes" : "No Changes"}
-        </Button>
-        {isExporting && (
-          <div className="flex-1">
-            <Progress value={exportProgress} />
+          {formatTimecode(currentTime)}
+          <span style={{ color: "#555", margin: "0 4px" }}>/</span>
+          {formatTimecode(durationS)}
+        </div>
+
+        {/* Speed badge — bottom right */}
+        {playbackRate !== 1 && (
+          <div
+            className="absolute bottom-3 right-3 px-2 py-1"
+            style={{
+              background: "rgba(232, 98, 14, 0.8)",
+              borderRadius: "4px",
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: "11px",
+              color: "#fff",
+            }}
+          >
+            {playbackRate}x
           </div>
         )}
+      </div>
+
+      {/* ── Toolbar ──────────────────────────────────────── */}
+      <div
+        className="flex items-center gap-1 px-3"
+        style={{
+          height: "40px",
+          background: "#111",
+          borderBottom: "1px solid #1a1a1a",
+          borderTop: "1px solid #1a1a1a",
+        }}
+      >
+        {/* Play/Pause */}
+        <ToolbarButton onClick={togglePlay} title="Play/Pause (Space)">
+          {isPlaying ? <IconPause /> : <IconPlay />}
+        </ToolbarButton>
+
+        {/* Speed selector */}
+        <div className="flex items-center gap-0.5 ml-1">
+          {speeds.map((s) => (
+            <button
+              key={s}
+              onClick={() => changeSpeed(s)}
+              style={{
+                padding: "2px 6px",
+                fontSize: "10px",
+                fontFamily: "'JetBrains Mono', monospace",
+                color: playbackRate === s ? "#E8620E" : "#555",
+                background: playbackRate === s ? "rgba(232, 98, 14, 0.1)" : "transparent",
+                border: "none",
+                borderRadius: "3px",
+                cursor: "pointer",
+                transition: "all 100ms",
+              }}
+            >
+              {s}x
+            </button>
+          ))}
+        </div>
+
+        {/* Divider */}
+        <div style={{ width: "1px", height: "20px", background: "#222", margin: "0 6px" }} />
+
+        {/* Split */}
+        <ToolbarButton onClick={handleSplit} title="Split at playhead (S)" accent>
+          <IconScissors />
+        </ToolbarButton>
+
+        {/* Delete */}
+        <ToolbarButton
+          onClick={handleDelete}
+          title="Delete segment (Backspace)"
+          disabled={segments.length <= 1}
+        >
+          <IconTrash />
+        </ToolbarButton>
+
+        {/* Divider */}
+        <div style={{ width: "1px", height: "20px", background: "#222", margin: "0 6px" }} />
+
+        {/* Undo/Redo */}
+        <ToolbarButton onClick={undo} title="Undo (Cmd+Z)" disabled={undoStack.length === 0}>
+          <IconUndo />
+        </ToolbarButton>
+        <ToolbarButton onClick={redo} title="Redo (Cmd+Shift+Z)" disabled={redoStack.length === 0}>
+          <IconRedo />
+        </ToolbarButton>
+
+        {/* Spacer */}
+        <div className="flex-1" />
+
+        {/* Zoom slider */}
+        <div className="flex items-center gap-2">
+          <span style={{ fontSize: "10px", color: "#444", fontFamily: "'JetBrains Mono', monospace" }}>
+            {timelineZoom.toFixed(1)}x
+          </span>
+          <input
+            type="range"
+            min={1}
+            max={10}
+            step={0.5}
+            value={timelineZoom}
+            onChange={(e) => setTimelineZoom(parseFloat(e.target.value))}
+            style={{ width: "80px", accentColor: "#E8620E" }}
+          />
+        </div>
+
+        {/* Divider */}
+        <div style={{ width: "1px", height: "20px", background: "#222", margin: "0 6px" }} />
+
+        {/* Export */}
+        <button
+          onClick={handleExport}
+          disabled={!isModified || isExporting}
+          style={{
+            padding: "4px 14px",
+            fontSize: "11px",
+            fontFamily: "system-ui",
+            fontWeight: 600,
+            textTransform: "uppercase",
+            letterSpacing: "0.08em",
+            color: !isModified || isExporting ? "#333" : "#fff",
+            background: !isModified || isExporting ? "#1a1a1a" : "#E8620E",
+            border: "none",
+            borderRadius: "4px",
+            cursor: !isModified || isExporting ? "not-allowed" : "pointer",
+            transition: "all 150ms",
+          }}
+        >
+          {isExporting ? `${exportProgress}%` : "Export"}
+        </button>
+      </div>
+
+      {/* Export progress bar */}
+      {isExporting && (
+        <div style={{ height: "2px", background: "#111" }}>
+          <div
+            style={{
+              height: "100%",
+              width: `${exportProgress}%`,
+              background: "#E8620E",
+              transition: "width 300ms ease",
+            }}
+          />
+        </div>
+      )}
+
+      {/* ── Timeline Area (with effects panel overlay) ──── */}
+      <div className="relative">
+        {/* Split flash overlay */}
+        {splitFlash && (
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              zIndex: 50,
+              animation: "split-flash 300ms ease-out forwards",
+            }}
+          />
+        )}
+
+        <div className="flex">
+          {/* Timeline content */}
+          <div className="flex-1 min-w-0">
+            {/* Thumbnail strip */}
+            <ThumbnailStrip
+              clipId={clipId}
+              durationS={durationS}
+              currentTime={currentTime}
+              onSeek={handleSeek}
+              segments={segments}
+              selectedSegmentId={selectedSegmentId}
+              onSelectSegment={(id) => selectSegmentById(id)}
+              timelineZoom={timelineZoom}
+            />
+
+            {/* Waveform */}
+            <WaveformTrack
+              clipId={clipId}
+              durationS={durationS}
+              currentTime={currentTime}
+              onSeek={handleSeek}
+              segments={segments}
+              selectedSegmentId={selectedSegmentId}
+              onSelectSegment={(id) => selectSegmentById(id)}
+              timelineZoom={timelineZoom}
+              onZoomChange={setTimelineZoom}
+              cutPoints={cutPoints}
+            />
+
+            {/* Segment labels row */}
+            <div className="relative overflow-x-auto" style={{ height: "22px", background: "#0d0d0d" }}>
+              <div style={{ width: `${100 * timelineZoom}%`, position: "relative", height: "100%" }}>
+                {segments.map((seg, i) => {
+                  const leftPct = (seg.start_s / durationS) * 100;
+                  const widthPct = ((seg.end_s - seg.start_s) / durationS) * 100;
+                  const isSelected = seg.id === selectedSegmentId;
+                  const isDeleting = seg.id === deletingId;
+
+                  return (
+                    <div
+                      key={seg.id}
+                      className="absolute top-0 h-full flex items-center justify-center cursor-pointer"
+                      style={{
+                        left: `${leftPct}%`,
+                        width: `${widthPct}%`,
+                        background: isSelected ? "rgba(232, 98, 14, 0.12)" : i % 2 === 0 ? "rgba(255,255,255,0.02)" : "rgba(255,255,255,0.04)",
+                        borderRight: "1px solid #1a1a1a",
+                        fontSize: "9px",
+                        fontFamily: "'JetBrains Mono', monospace",
+                        color: isSelected ? "#E8620E" : "#444",
+                        transition: "all 150ms",
+                        animation: isDeleting ? "segment-delete 200ms ease-out forwards" : undefined,
+                        transformOrigin: "center",
+                      }}
+                      onClick={() => selectSegmentById(seg.id)}
+                    >
+                      {(seg.end_s - seg.start_s).toFixed(1)}s
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Effect panel — slides in from right */}
+        <EffectPanel visible={showEffects} />
+      </div>
+
+      {/* ── Keyboard shortcut hint ───────────────────────── */}
+      <div
+        className="flex items-center justify-center gap-4 px-3"
+        style={{
+          height: "24px",
+          background: "#0d0d0d",
+          borderTop: "1px solid #151515",
+        }}
+      >
+        {[
+          ["Space", "Play"],
+          ["S", "Split"],
+          ["\u232B", "Delete"],
+          ["\u2318Z", "Undo"],
+          ["\u2190\u2192", "Step"],
+        ].map(([key, label]) => (
+          <span key={key} style={{ fontSize: "9px", color: "#333", fontFamily: "'JetBrains Mono', monospace" }}>
+            <span style={{ color: "#444", background: "#1a1a1a", padding: "1px 4px", borderRadius: "2px", marginRight: "3px" }}>
+              {key}
+            </span>
+            {label}
+          </span>
+        ))}
       </div>
     </div>
   );
 }
 
-function formatTime(seconds: number): string {
+/* ------------------------------------------------------------------ */
+/*  Toolbar button                                                     */
+/* ------------------------------------------------------------------ */
+
+function ToolbarButton({
+  children,
+  onClick,
+  title,
+  disabled,
+  accent,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  title: string;
+  disabled?: boolean;
+  accent?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      disabled={disabled}
+      style={{
+        width: "32px",
+        height: "28px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "transparent",
+        border: "none",
+        borderRadius: "4px",
+        color: disabled ? "#2a2a2a" : accent ? "#E8620E" : "#888",
+        cursor: disabled ? "not-allowed" : "pointer",
+        transition: "all 100ms",
+      }}
+      onMouseEnter={(e) => {
+        if (!disabled) e.currentTarget.style.background = "rgba(255,255,255,0.05)";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.background = "transparent";
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Time formatting                                                    */
+/* ------------------------------------------------------------------ */
+
+function formatTimecode(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = Math.floor(seconds % 60);
-  return `${m}:${String(s).padStart(2, "0")}`;
+  const f = Math.floor((seconds % 1) * 30); // frame number at 30fps
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}:${String(f).padStart(2, "0")}`;
 }

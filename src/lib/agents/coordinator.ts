@@ -301,16 +301,22 @@ export async function runPipeline(
       throw new Error("All clip renders failed");
     }
 
-    // ── Stitch highlight reel (all clips with transitions) ──
+    // ── Stitch highlight reel (all clips with varied transitions) ──
     let highlightReelUrl: string | undefined;
     if (clipResults.length > 1) {
       onProgress?.("stitching_highlight_reel", 95);
       try {
         const transitionConfig = getDefaultTransition(dnaContent);
+        // Cycle through visually interesting transitions for variety
+        const transitionCycle = ["fade", "zoomin", "fadeblack", "circleopen", "slideleft", "dissolve", "radial", "wipeleft"] as const;
+        const clipsWithTransitions = clipResults.map((c, idx) => ({
+          path: c.render_url,
+          transitionToNext: transitionCycle[idx % transitionCycle.length],
+        }));
         highlightReelUrl = await stitchHighlightReel(
-          clipResults.map((c) => c.render_url),
+          clipsWithTransitions,
           transitionConfig.type,
-          transitionConfig.durationS
+          0.7
         );
         console.log(`[Pipeline] Highlight reel: ${highlightReelUrl}`);
       } catch (err) {
