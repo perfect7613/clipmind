@@ -28,6 +28,8 @@ export interface EffectsConfig {
 
   // Zoom
   zoomEvents: ZoomEvent[];
+  videoWidth: number;
+  videoHeight: number;
 
   // Effects
   fadeIn: boolean;
@@ -49,6 +51,8 @@ const DEFAULT_EFFECTS: EffectsConfig = {
   filmGrainIntensity: 0.15,
   bleachBypass: false,
   zoomEvents: [],
+  videoWidth: 1280,
+  videoHeight: 720,
   fadeIn: true,
   fadeInDuration: 0.3,
   fadeOut: true,
@@ -84,9 +88,9 @@ export function buildVideoFilterChain(config: Partial<EffectsConfig> = {}): stri
   // 1. Even dimensions (required for libx264)
   filters.push("scale=trunc(iw/2)*2:trunc(ih/2)*2");
 
-  // 2. Smooth zoom via zoompan filter (ScreenStudio-style cosine easing)
+  // 2. Smooth zoom — Ken Burns push-in with detected resolution
   if (cfg.zoomEvents.length > 0) {
-    const zoomFilter = buildSmoothZoomFilter(cfg.zoomEvents, 30);
+    const zoomFilter = buildSmoothZoomFilter(cfg.zoomEvents, 30, cfg.videoWidth, cfg.videoHeight);
     if (zoomFilter) filters.push(zoomFilter);
   }
 

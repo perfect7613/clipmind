@@ -122,8 +122,16 @@ export async function runPipeline(
     onProgress?.("rendering", 40);
     const clipResults: PipelineResult["clips"] = [];
 
-    // Filter out any invalid clips before processing
-    const validClips = clips.filter((c) => c && typeof c.start_s === "number" && typeof c.end_s === "number" && c.end_s > c.start_s);
+    // Filter out invalid clips and clips shorter than 5 seconds
+    const validClips = clips.filter((c) => {
+      if (!c || typeof c.start_s !== "number" || typeof c.end_s !== "number") return false;
+      const dur = c.end_s - c.start_s;
+      if (dur < 5) {
+        console.warn(`[Pipeline] Skipping clip "${c.title}" — too short (${dur.toFixed(1)}s)`);
+        return false;
+      }
+      return true;
+    });
     console.log(`[Pipeline] ${validClips.length} valid clips out of ${clips.length} selected`);
 
     if (validClips.length === 0) {
@@ -136,22 +144,34 @@ export async function runPipeline(
 
       // Build clip-relative word timestamps (needed by both Skill 1 and Skill 2)
       const clipWords = transcript.words
-        .filter((w) => w.start_s >= clip.start_s && w.end_s <= clip.end_s)
+        .filter((w) => w.start_s >= clampedClip.start_s && w.end_s <= clampedClip.end_s)
         .map((w) => ({
           ...w,
-          start_s: w.start_s - clip.start_s,
-          end_s: w.end_s - clip.start_s,
+          start_s: w.start_s - clampedClip.start_s,
+          end_s: w.end_s - clampedClip.start_s,
         }));
+
+      // Clamp clip to video duration
+      const clampedClip = {
+        ...clip,
+        start_s: Math.max(0, clip.start_s),
+        end_s: Math.min(clip.end_s, duration_s),
+        duration_s: Math.min(clip.end_s, duration_s) - Math.max(0, clip.start_s),
+      };
+      if (clampedClip.duration_s < 5) {
+        console.warn(`[Pipeline] Clip ${i + 1} too short after clamping (${clampedClip.duration_s.toFixed(1)}s), skipping`);
+        continue;
+      }
 
       // ── Skill 1: Render edited clip (FFmpeg: zoom, color, grain, vignette, audio) ──
       onProgress?.(`rendering_clip_${i + 1}`, clipPctBase);
-      console.log(`[Pipeline] Rendering clip ${i + 1}: ${clip.title} (${clip.start_s}s → ${clip.end_s}s)`);
+      console.log(`[Pipeline] Rendering clip ${i + 1}: ${clampedClip.title} (${clampedClip.start_s}s → ${clampedClip.end_s}s)`);
 
       let editedPath: string;
       try {
         editedPath = await renderClip(
           payload.videoUrls[0],
-          clip,
+          clampedClip,
           workDir,
           i,
           {

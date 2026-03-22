@@ -6,6 +6,7 @@ import type { SelectedClip } from "./clip-selector";
 import { buildAudioFilterChain, type AudioProfile } from "./audio-mastering";
 import { buildVideoFilterChain, extractEffectsFromDna, type EffectsConfig } from "./ffmpeg-effects";
 import { planZoomEvents, type ZoomEvent, type ZoomPlan } from "./zoom-planner";
+import { detectResolution } from "./smooth-zoom";
 import type { WordTimestamp } from "@/types";
 
 interface RenderConfig {
@@ -64,6 +65,10 @@ export async function renderClip(
     }
   }
 
+  // ── Detect video resolution for zoompan ──
+  const [videoWidth, videoHeight] = await detectResolution(inputPath);
+  console.log(`[Render] Input resolution: ${videoWidth}x${videoHeight}`);
+
   // ── Extract effects config from DNA ──
   const dnaEffects = cfg.dnaContent ? extractEffectsFromDna(cfg.dnaContent) : {};
 
@@ -73,6 +78,8 @@ export async function renderClip(
     colorProfile: (cfg.colorProfile as EffectsConfig["colorProfile"]) || dnaEffects.colorProfile || "neutral",
     clipDurationS,
     zoomEvents: zoomPlan?.events || [],
+    videoWidth,
+    videoHeight,
   };
 
   const videoFilter = buildVideoFilterChain(effectsConfig);
