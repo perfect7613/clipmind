@@ -43,9 +43,10 @@ export interface EffectsConfig {
   clipDurationS: number;
 }
 
+// Defaults: NO effects unless DNA/preset explicitly enables them
 const DEFAULT_EFFECTS: EffectsConfig = {
   colorProfile: "neutral",
-  vignette: true,
+  vignette: false,
   vignetteIntensity: 0.3,
   filmGrain: false,
   filmGrainIntensity: 0.15,
@@ -53,9 +54,9 @@ const DEFAULT_EFFECTS: EffectsConfig = {
   zoomEvents: [],
   videoWidth: 1280,
   videoHeight: 720,
-  fadeIn: true,
+  fadeIn: false,
   fadeInDuration: 0.3,
-  fadeOut: true,
+  fadeOut: false,
   fadeOutDuration: 0.3,
   sharpen: false,
   sharpenAmount: 0.3,

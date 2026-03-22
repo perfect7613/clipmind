@@ -47,22 +47,25 @@ export async function renderClip(
 
   const clipDurationS = clip.end_s - clip.start_s;
 
-  // ── Plan zoom events if we have clip words ──
+  // ── Plan zoom events ONLY if DNA requests zoom ──
   let zoomPlan: ZoomPlan | null = null;
-  if (cfg.clipWords && cfg.clipWords.length > 0) {
+  const zoomAggressiveness = extractDnaFloat(cfg.dnaContent, "Aggressiveness", 0);
+
+  // Only plan zoom if DNA aggressiveness > 0.1 (i.e., creator actually wants zoom)
+  if (cfg.clipWords && cfg.clipWords.length > 0 && zoomAggressiveness > 0.1) {
     try {
-      // Extract zoom config from DNA
-      const zoomAggressiveness = extractDnaFloat(cfg.dnaContent, "Aggressiveness", 0.5);
-      const maxZoomLevel = extractDnaFloat(cfg.dnaContent, "Max zoom level", 1.5);
+      const maxZoomLevel = extractDnaFloat(cfg.dnaContent, "Max zoom level", 1.15);
 
       zoomPlan = await planZoomEvents(cfg.clipWords, clipDurationS, {
         aggressiveness: zoomAggressiveness,
         maxZoomLevel: maxZoomLevel,
       });
-      console.log(`[Render] Planned ${zoomPlan.events.length} zoom events for clip ${clipIndex + 1}`);
+      console.log(`[Render] Planned ${zoomPlan.events.length} zoom events for clip ${clipIndex + 1} (aggressiveness=${zoomAggressiveness})`);
     } catch (err) {
       console.error(`[Render] Zoom planning failed for clip ${clipIndex + 1}, skipping:`, err);
     }
+  } else {
+    console.log(`[Render] Zoom disabled for clip ${clipIndex + 1} (aggressiveness=${zoomAggressiveness})`);
   }
 
   // ── Detect video resolution for zoompan ──

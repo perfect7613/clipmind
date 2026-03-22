@@ -92,13 +92,13 @@ When this creator emphasizes a point, use punched-in zoom (~130%). For emotional
 ## Color Profile
 
 - Profile: ${params.color.profile}
-- Vignette: true
-- Vignette intensity: 0.3
+- Vignette: ${params.color.profile === "cinematic" || params.color.profile === "warm" ? "true" : "false"}
+- Vignette intensity: ${params.color.profile === "cinematic" ? "0.4" : "0.2"}
 - Film grain: ${params.color.profile === "cinematic" ? "true" : "false"}
-- Film grain intensity: 0.1
+- Film grain intensity: ${params.color.profile === "cinematic" ? "0.15" : "0"}
 - Sharpen: false
-- Fade in: true
-- Fade out: true
+- Fade in: ${params.color.profile === "cinematic" ? "true" : "false"}
+- Fade out: ${params.color.profile === "cinematic" ? "true" : "false"}
 
 ## Brand System
 
