@@ -87,26 +87,14 @@ export function AiPromptBox({ clipId, visible, onClose }: AiPromptBoxProps) {
 
   if (!visible) return null;
 
+  const isDisabled = loading || !prompt.trim() || !selectedSegment;
+
   return (
-    <div
-      style={{
-        background: "#111",
-        borderBottom: "1px solid #1a1a1a",
-        padding: "6px 12px",
-        display: "flex",
-        alignItems: "center",
-        gap: "8px",
-      }}
-    >
+    <div className="flex items-center gap-2 px-3 py-1.5 bg-zinc-900 border-b border-zinc-700">
       {/* Sparkle indicator */}
       <svg
         viewBox="0 0 24 24"
-        style={{
-          width: "14px",
-          height: "14px",
-          fill: "#E8620E",
-          flexShrink: 0,
-        }}
+        className="w-3.5 h-3.5 fill-orange-500 flex-shrink-0"
       >
         <path d="M12 0L14.59 8.41L23 12L14.59 15.59L12 24L9.41 15.59L1 12L9.41 8.41Z" />
       </svg>
@@ -120,35 +108,19 @@ export function AiPromptBox({ clipId, visible, onClose }: AiPromptBoxProps) {
         onKeyDown={handleKeyDown}
         placeholder={
           selectedSegment
-            ? 'Make this cinematic... / Speed up 1.5x / Add zoom effect'
+            ? "Make this cinematic... / Speed up 1.5x / Add zoom effect"
             : "Select a segment first"
         }
         disabled={loading || !selectedSegment}
-        style={{
-          flex: 1,
-          background: "transparent",
-          border: "none",
-          outline: "none",
-          color: "#e5e5e5",
-          fontSize: "12px",
-          fontFamily: "'JetBrains Mono', monospace",
-          letterSpacing: "0.02em",
-        }}
+        className="flex-1 bg-zinc-800 border border-zinc-700 rounded-md px-3 py-1 text-xs text-zinc-200 placeholder:text-zinc-600 outline-none focus:ring-1 focus:ring-orange-500 focus:border-orange-500 transition-all duration-150 disabled:opacity-50"
+        style={{ fontFamily: "'Geist Mono', monospace", letterSpacing: "0.02em" }}
       />
 
       {/* Error message */}
       {error && (
         <span
-          style={{
-            fontSize: "10px",
-            color: "#ef4444",
-            fontFamily: "'JetBrains Mono', monospace",
-            flexShrink: 0,
-            maxWidth: "200px",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
+          className="text-[10px] text-red-500 flex-shrink-0 max-w-[200px] overflow-hidden text-ellipsis whitespace-nowrap"
+          style={{ fontFamily: "'Geist Mono', monospace" }}
         >
           {error}
         </span>
@@ -156,45 +128,19 @@ export function AiPromptBox({ clipId, visible, onClose }: AiPromptBoxProps) {
 
       {/* Loading spinner */}
       {loading && (
-        <div
-          style={{
-            width: "14px",
-            height: "14px",
-            border: "2px solid #333",
-            borderTopColor: "#E8620E",
-            borderRadius: "50%",
-            animation: "ai-spin 600ms linear infinite",
-            flexShrink: 0,
-          }}
-        />
+        <div className="w-3.5 h-3.5 border-2 border-zinc-700 border-t-orange-500 rounded-full animate-spin flex-shrink-0" />
       )}
 
       {/* Apply button */}
       <button
         onClick={handleSubmit}
-        disabled={loading || !prompt.trim() || !selectedSegment}
-        style={{
-          padding: "4px 12px",
-          fontSize: "11px",
-          fontFamily: "system-ui",
-          fontWeight: 600,
-          textTransform: "uppercase",
-          letterSpacing: "0.08em",
-          color:
-            loading || !prompt.trim() || !selectedSegment ? "#333" : "#fff",
-          background:
-            loading || !prompt.trim() || !selectedSegment
-              ? "#1a1a1a"
-              : "#E8620E",
-          border: "none",
-          borderRadius: "4px",
-          cursor:
-            loading || !prompt.trim() || !selectedSegment
-              ? "not-allowed"
-              : "pointer",
-          transition: "all 150ms",
-          flexShrink: 0,
-        }}
+        disabled={isDisabled}
+        className={`px-3 py-1 text-[11px] font-semibold uppercase tracking-wider rounded-md border-none flex-shrink-0 transition-all duration-150 ${
+          isDisabled
+            ? "bg-zinc-800 text-zinc-600 cursor-not-allowed"
+            : "bg-orange-500 hover:bg-orange-600 text-white cursor-pointer hover:scale-105 active:scale-95"
+        }`}
+        style={{ fontFamily: "'Geist Sans', sans-serif" }}
       >
         Apply
       </button>
@@ -202,36 +148,10 @@ export function AiPromptBox({ clipId, visible, onClose }: AiPromptBoxProps) {
       {/* Close button */}
       <button
         onClick={onClose}
-        style={{
-          width: "20px",
-          height: "20px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          background: "transparent",
-          border: "none",
-          color: "#555",
-          cursor: "pointer",
-          borderRadius: "3px",
-          fontSize: "14px",
-          flexShrink: 0,
-          transition: "color 100ms",
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.color = "#999";
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.color = "#555";
-        }}
+        className="w-5 h-5 flex items-center justify-center bg-transparent border-none text-zinc-600 cursor-pointer rounded hover:text-zinc-400 transition-colors duration-100 flex-shrink-0 text-sm"
       >
         &times;
       </button>
-
-      <style>{`
-        @keyframes ai-spin {
-          to { transform: rotate(360deg); }
-        }
-      `}</style>
     </div>
   );
 }

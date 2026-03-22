@@ -24,7 +24,7 @@ export function CaptionOverlay({
   onStyleChange,
   containerRef,
 }: CaptionOverlayProps) {
-  // ALL hooks must be called unconditionally — before any returns
+  // ALL hooks must be called unconditionally
   const [isDragging, setIsDragging] = useState(false);
   const [customPosition, setCustomPosition] = useState<{ x: number; y: number } | null>(null);
   const captionRef = useRef<HTMLDivElement>(null);
@@ -141,7 +141,7 @@ export function CaptionOverlay({
           borderRadius: style.background === "pill" ? "999px" : style.background === "full-width" ? "0" : "6px",
           background: bg,
           textShadow: "0 2px 8px rgba(0,0,0,0.9), 0 0 2px rgba(0,0,0,0.5)",
-          fontFamily: "system-ui, -apple-system, sans-serif",
+          fontFamily: "'Geist Sans', sans-serif",
           letterSpacing: style.casing === "upper" ? "0.06em" : "0",
           lineHeight: 1.3,
         }}

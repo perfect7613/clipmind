@@ -46,7 +46,6 @@ export function ThumbnailStrip({
       const pct = (e.clientX - rect.left) / rect.width;
       const time = pct * durationS;
 
-      // Also select the segment under the click
       const seg = segments.find((s) => time >= s.start_s && time <= s.end_s);
       if (seg) onSelectSegment(seg.id);
 
@@ -61,40 +60,34 @@ export function ThumbnailStrip({
   return (
     <div className="relative overflow-x-auto scrollbar-thin" style={{ scrollBehavior: "smooth" }}>
       <div
-        className="relative h-14"
-        style={{
-          width: `${totalWidth}%`,
-          background: "#0d0d0d",
-        }}
+        className="relative h-14 bg-[#09090b] rounded-t-lg"
+        style={{ width: `${totalWidth}%` }}
         onClick={handleClick}
       >
         {/* Thumbnail images */}
-        <div className="flex h-full">
+        <div className="flex h-full overflow-hidden rounded-t-lg">
           {thumbnails.length > 0 ? (
             thumbnails.map((thumb) => (
               <img
                 key={thumb.index}
                 src={thumb.url}
                 alt=""
-                className="h-full object-cover flex-shrink-0"
-                style={{
-                  width: `${100 / thumbnails.length}%`,
-                  opacity: 0.7,
-                }}
+                className="h-full object-cover flex-shrink-0 opacity-70"
+                style={{ width: `${100 / thumbnails.length}%` }}
                 draggable={false}
               />
             ))
           ) : (
             <div
-              className="flex items-center justify-center w-full text-xs tracking-wider uppercase"
-              style={{ color: "#555", fontFamily: "system-ui" }}
+              className="flex items-center justify-center w-full text-xs uppercase tracking-wider text-zinc-600"
+              style={{ fontFamily: "'Geist Sans', sans-serif" }}
             >
               Loading frames...
             </div>
           )}
         </div>
 
-        {/* Segment boundaries — thin gaps as "cuts" */}
+        {/* Segment boundaries — cut marks */}
         {segments.map((seg, i) => {
           if (i === 0) return null;
           const leftPct = (seg.start_s / durationS) * 100;
@@ -104,9 +97,9 @@ export function ThumbnailStrip({
               className="absolute top-0 h-full pointer-events-none"
               style={{
                 left: `${leftPct}%`,
-                width: "2px",
-                background: "#0a0a0a",
-                boxShadow: "0 0 4px rgba(0,0,0,0.8)",
+                width: "1px",
+                background: "#09090b",
+                boxShadow: "-1px 0 3px rgba(0,0,0,0.8), 1px 0 3px rgba(0,0,0,0.8)",
                 zIndex: 5,
               }}
             />
@@ -121,12 +114,11 @@ export function ThumbnailStrip({
           return (
             <div
               key={`sel-${seg.id}`}
-              className="absolute top-0 h-full pointer-events-none"
+              className="absolute top-0 h-full pointer-events-none ring-2 ring-orange-500/50"
               style={{
                 left: `${leftPct}%`,
                 width: `${widthPct}%`,
-                border: "1px solid rgba(232, 98, 14, 0.6)",
-                boxShadow: "inset 0 0 12px rgba(232, 98, 14, 0.15), 0 0 8px rgba(232, 98, 14, 0.2)",
+                boxShadow: "inset 0 0 12px rgba(249, 115, 22, 0.15), 0 0 8px rgba(249, 115, 22, 0.2)",
                 zIndex: 6,
               }}
             />
@@ -135,26 +127,15 @@ export function ThumbnailStrip({
 
         {/* Playhead */}
         <div
-          className="absolute top-0 h-full pointer-events-none"
+          className="absolute top-0 h-full pointer-events-none z-10"
           style={{
             left: `${playheadPct}%`,
             width: "2px",
             background: "#fff",
-            zIndex: 10,
             transition: "left 50ms linear",
           }}
         >
-          <div
-            style={{
-              width: "8px",
-              height: "8px",
-              background: "#fff",
-              borderRadius: "50%",
-              position: "absolute",
-              top: "-4px",
-              left: "-3px",
-            }}
-          />
+          <div className="w-2 h-2 bg-white rounded-full absolute -top-1 -left-[3px]" />
         </div>
       </div>
     </div>

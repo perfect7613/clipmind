@@ -36,6 +36,7 @@ export interface Segment {
   start_s: number;
   end_s: number;
   effects: SegmentEffects;
+  sourceVideoPath?: string;
 }
 
 interface UndoSnapshot {
@@ -89,6 +90,7 @@ export interface TimelineState {
   loadBeats: (clipId: string) => Promise<void>;
   toggleBeatsVisible: () => void;
   snapCutsToBeats: () => void;
+  addVideoSegment: (sourceVideoPath: string, durationS: number) => void;
 }
 
 const DEFAULT_CAPTIONS: CaptionStyle = {
@@ -434,6 +436,33 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
 
   toggleBeatsVisible: () =>
     set((state) => ({ beatsVisible: !state.beatsVisible })),
+
+  addVideoSegment: (sourceVideoPath: string, dur: number) => {
+    const state = get();
+    state.pushUndo();
+
+    const lastSeg = state.segments[state.segments.length - 1];
+    const startS = lastSeg ? lastSeg.end_s : 0;
+    const endS = startS + dur;
+
+    const newSeg: Segment = {
+      id: makeSegmentId(),
+      start_s: startS,
+      end_s: endS,
+      effects: { ...DEFAULT_EFFECTS },
+      sourceVideoPath,
+    };
+
+    const newSegments = [...state.segments, newSeg];
+    const cutPoints = newSegments.map((s) => ({ start_s: s.start_s, end_s: s.end_s }));
+
+    set({
+      segments: newSegments,
+      cutPoints,
+      durationS: endS,
+      isModified: true,
+    });
+  },
 
   snapCutsToBeats: () => {
     const state = get();

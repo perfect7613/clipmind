@@ -30,12 +30,9 @@ export function EffectPanel({ visible }: EffectPanelProps) {
 
   return (
     <div
-      className="absolute top-0 right-0 h-full overflow-y-auto"
+      className="absolute top-0 right-0 h-full overflow-y-auto bg-zinc-900 border-l border-zinc-700 z-30"
       style={{
         width: "260px",
-        background: "#111111",
-        borderLeft: "1px solid #1a1a1a",
-        zIndex: 30,
         animation: "slideInRight 200ms ease-out",
       }}
     >
@@ -50,27 +47,27 @@ export function EffectPanel({ visible }: EffectPanelProps) {
         {/* Header */}
         <div className="flex items-center justify-between">
           <span
-            className="text-xs uppercase tracking-widest"
-            style={{ color: "#666", fontFamily: "system-ui" }}
+            className="text-xs uppercase tracking-[0.1em] text-zinc-500 font-medium"
+            style={{ fontFamily: "'Geist Sans', sans-serif" }}
           >
             Segment FX
           </span>
           <span
-            className="text-xs"
-            style={{ color: "#E8620E", fontFamily: "'JetBrains Mono', monospace" }}
+            className="text-xs text-orange-500"
+            style={{ fontFamily: "'Geist Mono', monospace" }}
           >
             {selectedSegment.start_s.toFixed(1)}s - {selectedSegment.end_s.toFixed(1)}s
           </span>
         </div>
 
         {/* Divider */}
-        <div style={{ height: "1px", background: "#1f1f1f" }} />
+        <div className="h-px bg-zinc-800" />
 
-        {/* Color Profile — Visual swatches */}
+        {/* Color Profile — Round swatches */}
         <div className="space-y-2">
           <label
-            className="text-xs uppercase tracking-wider block"
-            style={{ color: "#555", fontFamily: "system-ui" }}
+            className="text-xs uppercase tracking-[0.1em] text-zinc-500 font-medium block"
+            style={{ fontFamily: "'Geist Sans', sans-serif" }}
           >
             Color Grade
           </label>
@@ -82,22 +79,20 @@ export function EffectPanel({ visible }: EffectPanelProps) {
                   key={p.id}
                   onClick={() => updateEffects({ colorProfile: p.id })}
                   title={p.id}
+                  className="flex items-center justify-center cursor-pointer transition-all duration-150 hover:scale-110"
                   style={{
-                    width: "36px",
-                    height: "36px",
-                    borderRadius: "4px",
+                    width: "32px",
+                    height: "32px",
+                    borderRadius: "50%",
                     background: p.color,
-                    border: isActive ? "2px solid #E8620E" : "2px solid transparent",
+                    border: "none",
+                    outline: "none",
+                    boxShadow: isActive ? "0 0 0 2px #09090b, 0 0 0 4px #f97316" : "none",
                     opacity: isActive ? 1 : 0.5,
-                    transition: "all 150ms ease",
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: "10px",
+                    fontSize: "9px",
                     color: "#fff",
-                    fontFamily: "system-ui",
                     fontWeight: 600,
+                    fontFamily: "'Geist Sans', sans-serif",
                   }}
                 >
                   {p.label}
@@ -107,11 +102,11 @@ export function EffectPanel({ visible }: EffectPanelProps) {
           </div>
         </div>
 
-        {/* Toggle Effects — Compact grid */}
+        {/* Toggle Effects */}
         <div className="space-y-2">
           <label
-            className="text-xs uppercase tracking-wider block"
-            style={{ color: "#555", fontFamily: "system-ui" }}
+            className="text-xs uppercase tracking-[0.1em] text-zinc-500 font-medium block"
+            style={{ fontFamily: "'Geist Sans', sans-serif" }}
           >
             Effects
           </label>
@@ -144,14 +139,14 @@ export function EffectPanel({ visible }: EffectPanelProps) {
           <div className="space-y-1">
             <div className="flex justify-between">
               <label
-                className="text-xs uppercase tracking-wider"
-                style={{ color: "#555", fontFamily: "system-ui" }}
+                className="text-xs uppercase tracking-[0.1em] text-zinc-500 font-medium"
+                style={{ fontFamily: "'Geist Sans', sans-serif" }}
               >
                 Speed
               </label>
               <span
-                className="text-xs"
-                style={{ color: "#E8620E", fontFamily: "'JetBrains Mono', monospace" }}
+                className="text-xs text-orange-500"
+                style={{ fontFamily: "'Geist Mono', monospace" }}
               >
                 {selectedSegment?.effects.speedFactor.toFixed(1)}x
               </span>
@@ -163,17 +158,16 @@ export function EffectPanel({ visible }: EffectPanelProps) {
               step={0.1}
               value={selectedSegment?.effects.speedFactor ?? 1.0}
               onChange={(e) => updateEffects({ speedFactor: parseFloat(e.target.value) })}
-              className="w-full"
-              style={{ accentColor: "#E8620E" }}
+              className="w-full accent-orange-500"
             />
           </div>
         )}
 
-        {/* Transition — Visual icons */}
+        {/* Transition */}
         <div className="space-y-2">
           <label
-            className="text-xs uppercase tracking-wider block"
-            style={{ color: "#555", fontFamily: "system-ui" }}
+            className="text-xs uppercase tracking-[0.1em] text-zinc-500 font-medium block"
+            style={{ fontFamily: "'Geist Sans', sans-serif" }}
           >
             Transition
           </label>
@@ -184,37 +178,33 @@ export function EffectPanel({ visible }: EffectPanelProps) {
                 <button
                   key={t.id}
                   onClick={() => updateEffects({ transitionType: t.id })}
-                  style={{
-                    padding: "6px 8px",
-                    borderRadius: "4px",
-                    background: isActive ? "rgba(232, 98, 14, 0.15)" : "rgba(255,255,255,0.03)",
-                    border: isActive ? "1px solid rgba(232, 98, 14, 0.5)" : "1px solid #1f1f1f",
-                    color: isActive ? "#E8620E" : "#666",
-                    cursor: "pointer",
-                    transition: "all 150ms ease",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "6px",
-                    fontSize: "11px",
-                    fontFamily: "system-ui",
-                  }}
+                  className={`flex items-center gap-1.5 px-2 py-1.5 rounded-md text-[11px] border cursor-pointer transition-all duration-150 hover:scale-[1.02] ${
+                    isActive
+                      ? "bg-orange-500/15 border-orange-500/50 text-orange-500"
+                      : "bg-white/[0.03] border-zinc-800 text-zinc-500 hover:border-zinc-700"
+                  }`}
+                  style={{ fontFamily: "'Geist Sans', sans-serif" }}
                 >
-                  <span style={{ fontSize: "14px" }}>{t.icon}</span>
+                  <span className="text-sm">{t.icon}</span>
                   {t.label}
                 </button>
               );
             })}
           </div>
         </div>
-        {/* Captions / Subtitles */}
-        <div style={{ height: "1px", background: "#1f1f1f" }} />
 
+        {/* Divider */}
+        <div className="h-px bg-zinc-800" />
+
+        {/* Captions */}
         <div className="space-y-2">
-          <label className="text-xs uppercase tracking-wider block" style={{ color: "#555", fontFamily: "system-ui" }}>
+          <label
+            className="text-xs uppercase tracking-[0.1em] text-zinc-500 font-medium block"
+            style={{ fontFamily: "'Geist Sans', sans-serif" }}
+          >
             Captions
           </label>
 
-          {/* Enable/disable */}
           <CompactToggle
             label="Show Captions"
             active={selectedSegment?.effects.captions?.enabled !== false}
@@ -226,52 +216,44 @@ export function EffectPanel({ visible }: EffectPanelProps) {
 
           {/* Position */}
           <div className="flex gap-1">
-            {(["top", "center", "bottom"] as const).map((pos) => (
-              <button
-                key={pos}
-                onClick={() => updateEffects({ captions: { ...selectedSegment?.effects.captions!, position: pos } } as any)}
-                style={{
-                  flex: 1,
-                  padding: "4px",
-                  fontSize: "9px",
-                  fontFamily: "'JetBrains Mono', monospace",
-                  background: selectedSegment?.effects.captions?.position === pos ? "rgba(232,98,14,0.15)" : "rgba(255,255,255,0.03)",
-                  border: selectedSegment?.effects.captions?.position === pos ? "1px solid rgba(232,98,14,0.5)" : "1px solid #1f1f1f",
-                  color: selectedSegment?.effects.captions?.position === pos ? "#E8620E" : "#666",
-                  borderRadius: "3px",
-                  cursor: "pointer",
-                  transition: "all 150ms",
-                  textTransform: "capitalize",
-                }}
-              >
-                {pos}
-              </button>
-            ))}
+            {(["top", "center", "bottom"] as const).map((pos) => {
+              const isActive = selectedSegment?.effects.captions?.position === pos;
+              return (
+                <button
+                  key={pos}
+                  onClick={() => updateEffects({ captions: { ...selectedSegment?.effects.captions!, position: pos } } as any)}
+                  className={`flex-1 py-1 text-[9px] capitalize rounded border cursor-pointer transition-all duration-150 ${
+                    isActive
+                      ? "bg-orange-500/15 border-orange-500/50 text-orange-500"
+                      : "bg-white/[0.03] border-zinc-800 text-zinc-500"
+                  }`}
+                  style={{ fontFamily: "'Geist Mono', monospace" }}
+                >
+                  {pos}
+                </button>
+              );
+            })}
           </div>
 
           {/* Size */}
           <div className="flex gap-1">
-            {(["small", "medium", "large"] as const).map((sz) => (
-              <button
-                key={sz}
-                onClick={() => updateEffects({ captions: { ...selectedSegment?.effects.captions!, fontSize: sz } } as any)}
-                style={{
-                  flex: 1,
-                  padding: "4px",
-                  fontSize: "9px",
-                  fontFamily: "'JetBrains Mono', monospace",
-                  background: selectedSegment?.effects.captions?.fontSize === sz ? "rgba(232,98,14,0.15)" : "rgba(255,255,255,0.03)",
-                  border: selectedSegment?.effects.captions?.fontSize === sz ? "1px solid rgba(232,98,14,0.5)" : "1px solid #1f1f1f",
-                  color: selectedSegment?.effects.captions?.fontSize === sz ? "#E8620E" : "#666",
-                  borderRadius: "3px",
-                  cursor: "pointer",
-                  transition: "all 150ms",
-                  textTransform: "capitalize",
-                }}
-              >
-                {sz}
-              </button>
-            ))}
+            {(["small", "medium", "large"] as const).map((sz) => {
+              const isActive = selectedSegment?.effects.captions?.fontSize === sz;
+              return (
+                <button
+                  key={sz}
+                  onClick={() => updateEffects({ captions: { ...selectedSegment?.effects.captions!, fontSize: sz } } as any)}
+                  className={`flex-1 py-1 text-[9px] capitalize rounded border cursor-pointer transition-all duration-150 ${
+                    isActive
+                      ? "bg-orange-500/15 border-orange-500/50 text-orange-500"
+                      : "bg-white/[0.03] border-zinc-800 text-zinc-500"
+                  }`}
+                  style={{ fontFamily: "'Geist Mono', monospace" }}
+                >
+                  {sz}
+                </button>
+              );
+            })}
           </div>
 
           {/* Background style */}
@@ -280,26 +262,23 @@ export function EffectPanel({ visible }: EffectPanelProps) {
               { id: "dark-bar", label: "Bar" },
               { id: "pill", label: "Pill" },
               { id: "none", label: "None" },
-            ] as const).map((bg) => (
-              <button
-                key={bg.id}
-                onClick={() => updateEffects({ captions: { ...selectedSegment?.effects.captions!, background: bg.id } } as any)}
-                style={{
-                  flex: 1,
-                  padding: "4px",
-                  fontSize: "9px",
-                  fontFamily: "'JetBrains Mono', monospace",
-                  background: selectedSegment?.effects.captions?.background === bg.id ? "rgba(232,98,14,0.15)" : "rgba(255,255,255,0.03)",
-                  border: selectedSegment?.effects.captions?.background === bg.id ? "1px solid rgba(232,98,14,0.5)" : "1px solid #1f1f1f",
-                  color: selectedSegment?.effects.captions?.background === bg.id ? "#E8620E" : "#666",
-                  borderRadius: "3px",
-                  cursor: "pointer",
-                  transition: "all 150ms",
-                }}
-              >
-                {bg.label}
-              </button>
-            ))}
+            ] as const).map((bg) => {
+              const isActive = selectedSegment?.effects.captions?.background === bg.id;
+              return (
+                <button
+                  key={bg.id}
+                  onClick={() => updateEffects({ captions: { ...selectedSegment?.effects.captions!, background: bg.id } } as any)}
+                  className={`flex-1 py-1 text-[9px] rounded border cursor-pointer transition-all duration-150 ${
+                    isActive
+                      ? "bg-orange-500/15 border-orange-500/50 text-orange-500"
+                      : "bg-white/[0.03] border-zinc-800 text-zinc-500"
+                  }`}
+                  style={{ fontFamily: "'Geist Mono', monospace" }}
+                >
+                  {bg.label}
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -319,29 +298,17 @@ function CompactToggle({
   return (
     <button
       onClick={onToggle}
-      style={{
-        padding: "6px 8px",
-        borderRadius: "4px",
-        background: active ? "rgba(232, 98, 14, 0.12)" : "rgba(255,255,255,0.03)",
-        border: active ? "1px solid rgba(232, 98, 14, 0.4)" : "1px solid #1f1f1f",
-        color: active ? "#E8620E" : "#555",
-        cursor: "pointer",
-        transition: "all 150ms ease",
-        display: "flex",
-        alignItems: "center",
-        gap: "6px",
-        fontSize: "11px",
-        fontFamily: "system-ui",
-      }}
+      className={`flex items-center gap-1.5 px-2 py-1.5 rounded-full text-[11px] border cursor-pointer transition-all duration-150 hover:scale-[1.02] ${
+        active
+          ? "bg-orange-500/12 border-orange-500/40 text-orange-500"
+          : "bg-white/[0.03] border-zinc-800 text-zinc-500 hover:border-zinc-700"
+      }`}
+      style={{ fontFamily: "'Geist Sans', sans-serif" }}
     >
       <span
-        style={{
-          width: "6px",
-          height: "6px",
-          borderRadius: "50%",
-          background: active ? "#E8620E" : "#333",
-          flexShrink: 0,
-        }}
+        className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+          active ? "bg-orange-500" : "bg-zinc-700"
+        }`}
       />
       {label}
     </button>

@@ -36,7 +36,6 @@ export function WaveformTrack({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const audioDataRef = useRef<Float32Array | null>(null);
 
-  // Redraw on data changes
   const drawRef = useRef<() => void>(() => {});
 
   // Load and decode audio
@@ -62,10 +61,10 @@ export function WaveformTrack({
             canvas.width = rect.width * 2;
             canvas.height = rect.height * 2;
           }
-          ctx.fillStyle = "#111";
+          ctx.fillStyle = "#09090b";
           ctx.fillRect(0, 0, canvas.width, canvas.height);
-          ctx.fillStyle = "#333";
-          ctx.font = "20px system-ui";
+          ctx.fillStyle = "#3f3f46";
+          ctx.font = "20px 'Geist Sans', sans-serif";
           ctx.textAlign = "center";
           ctx.fillText("No audio data", canvas.width / 2, canvas.height / 2);
         }
@@ -135,14 +134,11 @@ export function WaveformTrack({
       onWheel={handleWheel}
     >
       <div
-        className="relative h-24"
-        style={{
-          width: `${totalWidth}%`,
-          background: "#0a0a0a",
-        }}
+        className="relative h-24 bg-[#09090b]"
+        style={{ width: `${totalWidth}%` }}
         onClick={handleClick}
       >
-        <canvas ref={canvasRef} className="w-full h-full" style={{ display: "block" }} />
+        <canvas ref={canvasRef} className="w-full h-full block" />
 
         {/* Segment boundary lines */}
         {segments.map((seg, i) => {
@@ -151,18 +147,17 @@ export function WaveformTrack({
           return (
             <div
               key={`boundary-${seg.id}`}
-              className="absolute top-0 h-full pointer-events-none"
+              className="absolute top-0 h-full pointer-events-none z-[5]"
               style={{
                 left: `${leftPct}%`,
                 width: "1px",
-                background: "rgba(232, 98, 14, 0.5)",
-                zIndex: 5,
+                background: "rgba(249, 115, 22, 0.5)",
               }}
             />
           );
         })}
 
-        {/* Segment colored bands (odd/even alternating) */}
+        {/* Segment colored bands */}
         {segments.map((seg, i) => {
           const leftPct = (seg.start_s / durationS) * 100;
           const widthPct = ((seg.end_s - seg.start_s) / durationS) * 100;
@@ -177,13 +172,12 @@ export function WaveformTrack({
           return (
             <div
               key={`band-${seg.id}`}
-              className="absolute top-0 h-full pointer-events-none"
+              className="absolute top-0 h-full pointer-events-none z-[2]"
               style={{
                 left: `${leftPct}%`,
                 width: `${widthPct}%`,
                 background: bg,
-                borderLeft: i > 0 ? "1px solid rgba(232, 98, 14, 0.3)" : undefined,
-                zIndex: 2,
+                borderLeft: i > 0 ? "1px solid rgba(249, 115, 22, 0.3)" : undefined,
               }}
             />
           );
@@ -196,12 +190,11 @@ export function WaveformTrack({
           return (
             <div
               key={`beat-${i}`}
-              className="absolute top-0 h-full pointer-events-none"
+              className="absolute top-0 h-full pointer-events-none z-[4]"
               style={{
                 left: `${leftPct}%`,
                 width: "1px",
-                background: `rgba(255, 180, 0, ${opacity})`,
-                zIndex: 4,
+                background: `rgba(251, 191, 36, ${opacity})`,
               }}
             />
           );
@@ -209,27 +202,20 @@ export function WaveformTrack({
 
         {/* Playhead */}
         <div
-          className="absolute top-0 h-full pointer-events-none"
+          className="absolute top-0 h-full pointer-events-none z-[15]"
           style={{
             left: `${playheadPct}%`,
             width: "2px",
             background: "#ffffff",
-            zIndex: 15,
             transition: "left 50ms linear",
-            boxShadow: "0 0 6px rgba(255,255,255,0.4)",
+            boxShadow: "0 0 8px rgba(249, 115, 22, 0.4), 0 0 4px rgba(255,255,255,0.3)",
           }}
         >
           {/* Grabber dot */}
           <div
+            className="absolute -top-[5px] -left-1 w-2.5 h-2.5 bg-white rounded-full"
             style={{
-              width: "10px",
-              height: "10px",
-              background: "#fff",
-              borderRadius: "50%",
-              position: "absolute",
-              top: "-5px",
-              left: "-4px",
-              boxShadow: "0 0 8px rgba(255,255,255,0.6)",
+              boxShadow: "0 0 10px rgba(249, 115, 22, 0.6), 0 0 4px rgba(255,255,255,0.5)",
             }}
           />
         </div>
@@ -250,7 +236,7 @@ function drawSegmentWaveform(
   ctx.clearRect(0, 0, width, height);
 
   // Dark background
-  ctx.fillStyle = "#0a0a0a";
+  ctx.fillStyle = "#09090b";
   ctx.fillRect(0, 0, width, height);
 
   const samplesPerPixel = Math.max(1, Math.floor(data.length / width));
@@ -270,19 +256,18 @@ function drawSegmentWaveform(
     const timePct = x / width;
     const timeS = timePct * durationS;
 
-    // Determine which segment this pixel belongs to
     const seg = segments.find((s) => timeS >= s.start_s && timeS <= s.end_s);
     const isSelected = seg?.id === selectedSegmentId;
 
     if (isSelected) {
-      // Bright orange for selected segment
-      ctx.fillStyle = "#E8620E";
+      // Orange-500 for selected segment
+      ctx.fillStyle = "#f97316";
     } else if (seg) {
-      // Dim grey for unselected
-      ctx.fillStyle = "#3a3a3a";
+      // Zinc-600 for unselected
+      ctx.fillStyle = "#52525b";
     } else {
       // Very dim for gaps
-      ctx.fillStyle = "#1a1a1a";
+      ctx.fillStyle = "#18181b";
     }
 
     ctx.fillRect(x, mid - barHeight, 1, barHeight * 2);
