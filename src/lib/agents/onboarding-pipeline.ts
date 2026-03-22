@@ -1,8 +1,9 @@
 import { fetchYouTubeData } from "./youtube-fetch";
-import { sampleFrames, cleanupFrames } from "./frame-sampler";
+import { sampleFrames, cleanupFrames, analyzeWindows } from "./frame-sampler";
 import { analyzeVisualStyle } from "./visual-analyzer";
 import { analyzeVoice } from "./voice-analyzer";
 import { analyzePacing } from "./pacing-analyzer";
+import { analyzeAudio } from "./audio-analyzer";
 import { writeDnaSkill } from "./dna-writer";
 import { saveDnaSkill } from "@/lib/dna/loader";
 import { extractAudio } from "@/lib/ffmpeg/extract";
@@ -46,14 +47,19 @@ export async function onboardFromYouTube(
     url,
   ]);
 
-  onProgress?.("sampling_frames", 35);
+  onProgress?.("sampling_frames", 30);
 
-  // Step 3: Sample frames
-  const frameResult = await sampleFrames(videoPath, 20);
+  // Step 3: Dense frame sampling at 1fps
+  const frameResult = await sampleFrames(videoPath);
+
+  onProgress?.("analyzing_windows", 40);
+
+  // Step 4: Per-window analysis (colors, brightness, scene changes)
+  const analyzedWindows = await analyzeWindows(frameResult.windows, videoPath);
 
   onProgress?.("analyzing_visual", 50);
 
-  // Step 4: Visual analysis
+  // Step 5: Visual analysis
   const visualAnalysis = await analyzeVisualStyle(frameResult.frames);
 
   onProgress?.("analyzing_voice", 65);
@@ -76,9 +82,21 @@ export async function onboardFromYouTube(
     ? analyzePacing(wordTimestamps, ytData.metadata.duration_s)
     : undefined;
 
-  onProgress?.("writing_dna", 85);
+  onProgress?.("analyzing_audio", 80);
 
-  // Step 7: Write DNA skill
+  // Step 7: Audio analysis (extract audio then run FFmpeg analysis)
+  let audioAnalysis;
+  try {
+    const { audioPath } = await extractAudio(videoPath);
+    audioAnalysis = await analyzeAudio(audioPath);
+    await fs.unlink(audioPath).catch(() => {});
+  } catch {
+    audioAnalysis = undefined;
+  }
+
+  onProgress?.("writing_dna", 88);
+
+  // Step 8: Write DNA skill
   const username = creatorName.toLowerCase().replace(/[^a-z0-9]/g, "-").slice(0, 30);
   const { skillContent } = await writeDnaSkill({
     username,
@@ -86,11 +104,13 @@ export async function onboardFromYouTube(
     visual: visualAnalysis,
     voice: voiceAnalysis,
     pacing: pacingAnalysis,
+    audio: audioAnalysis,
+    windows: analyzedWindows,
   });
 
   onProgress?.("saving", 95);
 
-  // Step 8: Save to Supabase
+  // Step 10: Save to Supabase
   const profileId = await saveDnaSkill(userId, creatorName, skillContent, "youtube", url);
 
   // Cleanup
@@ -122,33 +142,48 @@ export async function onboardFromUpload(
   const sarvam = getSarvamClient();
   const transcript = await sarvam.transcribe(audioBuffer);
 
-  onProgress?.("sampling_frames", 40);
+  onProgress?.("sampling_frames", 35);
 
-  // Step 2: Sample frames
-  const frameResult = await sampleFrames(videoPath, 20);
+  // Step 2: Dense frame sampling at 1fps
+  const frameResult = await sampleFrames(videoPath);
+
+  onProgress?.("analyzing_windows", 45);
+
+  // Step 3: Per-window analysis (colors, brightness, scene changes)
+  const analyzedWindows = await analyzeWindows(frameResult.windows, videoPath);
 
   onProgress?.("analyzing_visual", 55);
 
-  // Step 3: Visual analysis
+  // Step 4: Visual analysis
   const visualAnalysis = await analyzeVisualStyle(frameResult.frames);
 
   onProgress?.("analyzing_voice", 70);
 
-  // Step 4: Voice analysis
+  // Step 5: Voice analysis
   const voiceAnalysis = transcript.transcript.length > 50
     ? await analyzeVoice(transcript.transcript)
     : undefined;
 
-  onProgress?.("analyzing_pacing", 80);
+  onProgress?.("analyzing_pacing", 78);
 
-  // Step 5: Pacing analysis
+  // Step 6: Pacing analysis
   const pacingAnalysis = transcript.words.length > 0
     ? analyzePacing(transcript.words, duration_s)
     : undefined;
 
+  onProgress?.("analyzing_audio", 84);
+
+  // Step 7: Audio analysis (reuse already-extracted audio)
+  let audioAnalysis;
+  try {
+    audioAnalysis = await analyzeAudio(audioPath);
+  } catch {
+    audioAnalysis = undefined;
+  }
+
   onProgress?.("writing_dna", 90);
 
-  // Step 6: Write DNA skill
+  // Step 8: Write DNA skill (now with per-window data)
   const username = creatorName.toLowerCase().replace(/[^a-z0-9]/g, "-").slice(0, 30);
   const { skillContent } = await writeDnaSkill({
     username,
@@ -156,11 +191,13 @@ export async function onboardFromUpload(
     visual: visualAnalysis,
     voice: voiceAnalysis,
     pacing: pacingAnalysis,
+    audio: audioAnalysis,
+    windows: analyzedWindows,
   });
 
   onProgress?.("saving", 95);
 
-  // Step 7: Save to Supabase
+  // Step 9: Save to Supabase
   const profileId = await saveDnaSkill(userId, creatorName, skillContent, "upload");
 
   // Cleanup

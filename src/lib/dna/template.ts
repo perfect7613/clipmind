@@ -1,4 +1,6 @@
-export function generateDnaSkillContent(params: {
+import { generateComparativeSection } from "./baseline";
+
+export interface DnaTemplateParams {
   username: string;
   creatorName: string;
   captionStyle: {
@@ -49,7 +51,13 @@ export function generateDnaSkillContent(params: {
   humorType: string;
   energyLevel: string;
   hookPattern: string;
-}): string {
+  // New: comparative + observations
+  brollPercentage?: number;
+  speechRatio?: number;
+  observations?: string[];
+}
+
+export function generateDnaSkillContent(params: DnaTemplateParams): string {
   return `---
 name: creator-dna-${params.username}
 description: Editing style profile for ${params.creatorName}. Defines caption style, zoom behavior, audio standards, color preferences, animation density, brand system, and pacing rules. Referenced by all pipeline agents when editing this creator's videos.
@@ -131,5 +139,23 @@ When this creator emphasizes a point, use punched-in zoom (~130%). For emotional
 - Humor: ${params.humorType}
 - Energy: ${params.energyLevel}
 - Hook pattern: ${params.hookPattern}
+
+## Style vs Average (Comparative)
+
+${generateComparativeSection({
+  cutsPerMinute: params.pacing.cutsPerMinute,
+  zoomAggressiveness: params.zoom.aggressiveness,
+  silenceToleranceMs: params.pacing.silenceToleranceMs,
+  energyLevel: params.energyLevel,
+  animationDensity: params.animationDensity,
+  brollPercentage: params.brollPercentage,
+  speechRatio: params.speechRatio,
+})}
+
+## Observations
+
+${(params.observations && params.observations.length > 0)
+  ? params.observations.map((o) => `- ${o}`).join("\n")
+  : "- No specific observations yet. Will be populated after analyzing more videos."}
 `;
 }

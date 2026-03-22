@@ -5,6 +5,8 @@ import { generateDnaSkillContent } from "@/lib/dna/template";
 import type { VisualAnalysis } from "./visual-analyzer";
 import type { VoiceAnalysis } from "./voice-analyzer";
 import type { PacingAnalysis } from "./pacing-analyzer";
+import type { AudioAnalysis } from "./audio-analyzer";
+import type { FrameWindow } from "./frame-sampler";
 
 const anthropic = new Anthropic();
 
@@ -14,6 +16,8 @@ interface DnaWriterInput {
   visual?: VisualAnalysis;
   voice?: VoiceAnalysis;
   pacing?: PacingAnalysis;
+  audio?: AudioAnalysis;
+  windows?: FrameWindow[];
 }
 
 /**
@@ -93,6 +97,14 @@ Return a JSON object matching this exact structure (fill in values based on the 
   "hookPattern": "question" | "statement" | "reaction" | "story" | "stat"
 }
 
+Also include an "observations" array with 3-5 specific, actionable observations about what makes this creator's editing style UNIQUE compared to typical YouTube editing. Things a video editor would notice:
+- "Always starts with a 2-3 second cold open before the title"
+- "Music drops to silence during key arguments for emphasis"
+- "Uses jump cuts every 3-4 seconds during high-energy segments"
+- "Never uses B-roll — entire video is talking head"
+
+Add: "observations": ["observation 1", "observation 2", ...]
+
 Return ONLY the JSON object, no explanation.`,
       },
     ],
@@ -108,15 +120,32 @@ Return ONLY the JSON object, no explanation.`,
     jsonStr = jsonStr.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
   }
 
+  let rawParsed: any;
   let params: DnaSkillParams;
   try {
-    params = DnaSkillParamsSchema.parse(JSON.parse(jsonStr));
+    rawParsed = JSON.parse(jsonStr);
+    params = DnaSkillParamsSchema.parse(rawParsed);
   } catch {
-    // Fallback to defaults merged with what we can extract
+    rawParsed = {};
     params = mergeWithDefaults(input);
   }
 
-  const skillContent = generateDnaSkillContent(params);
+  // Extract observations (not in Zod schema — passed separately to template)
+  const observations: string[] = Array.isArray(rawParsed?.observations)
+    ? rawParsed.observations.filter((o: any) => typeof o === "string").slice(0, 7)
+    : [];
+
+  const brollPercentage = input.visual?.brollPresence?.estimatedPercentage;
+  const speechRatio = input.pacing
+    ? (100 - (input.pacing.silenceDistribution?.silencePercentage || 25)) / 100
+    : undefined;
+
+  const skillContent = generateDnaSkillContent({
+    ...params,
+    brollPercentage,
+    speechRatio,
+    observations,
+  });
 
   return { skillContent, params };
 }
@@ -161,6 +190,29 @@ ${input.visual.captionStyle.detected ? `  - Casing: ${input.visual.captionStyle.
 - Filler words: ${input.pacing.fillerWords.detected.join(", ")} (${input.pacing.fillerWords.perMinute}/min)`);
   }
 
+  if (input.audio) {
+    parts.push(`## Audio Analysis (FFmpeg)
+- Integrated loudness: ${input.audio.integratedLoudness} LUFS
+- True peak: ${input.audio.truePeak} dBTP
+- Loudness range (LRA): ${input.audio.loudnessRange} LU
+- Speech ratio: ${(input.audio.speechRatio * 100).toFixed(1)}%
+- Energy profile: ${input.audio.energyProfile}
+- Pause frequency: ${input.audio.pauseFrequency} pauses/min
+- Avg pause duration: ${input.audio.avgPauseDuration}s
+- Silence segments detected: ${input.audio.silenceSegments.length}`);
+  }
+
+  if (input.windows && input.windows.length > 0) {
+    const windowStats = summarizeWindows(input.windows);
+    parts.push(`## Per-Window Frame Analysis (${input.windows.length} windows of 10s each)
+- Dominant colors across video: ${windowStats.topColors.join(", ") || "unknown"}
+- Average brightness: ${windowStats.avgBrightness.toFixed(0)}/255 (${windowStats.avgBrightness > 170 ? "bright" : windowStats.avgBrightness > 85 ? "medium" : "dark"})
+- Total scene changes: ${windowStats.totalSceneChanges}
+- Avg scene changes per window: ${windowStats.avgSceneChangesPerWindow.toFixed(1)}
+- Estimated B-roll %: ${windowStats.brollPercentage.toFixed(0)}% (windows without detected faces)
+- Pacing category: ${windowStats.pacingCategory}`);
+  }
+
   if (parts.length === 0) {
     parts.push("No analysis data available. Use sensible defaults for a YouTube vlogger.");
   }
@@ -195,6 +247,33 @@ function mergeWithDefaults(input: DnaWriterInput): DnaSkillParams {
     params.pacing.preferredClipLengthMax = input.pacing.preferredClipLength.maxS;
     params.pacing.fillerWords = input.pacing.fillerWords.detected;
     params.pacing.removeFillers = input.pacing.fillerWords.perMinute > 2;
+  }
+
+  if (input.audio) {
+    // Audio style: lots of pauses → podcast_warm, high energy → vlog_punchy
+    if (input.audio.pauseFrequency > 8 || input.audio.avgPauseDuration > 1.5) {
+      params.audio.style = "podcast_warm";
+    } else if (input.audio.energyProfile === "high" || input.audio.energyProfile === "dynamic") {
+      params.audio.style = "vlog_punchy";
+    }
+
+    // Use actual loudness targets
+    params.audio.targetLufs = Math.round(input.audio.integratedLoudness);
+    params.audio.targetTruePeak = Math.round(input.audio.truePeak * 10) / 10;
+
+    // Silence tolerance from actual pause data (convert to ms)
+    if (input.audio.avgPauseDuration > 0) {
+      params.pacing.silenceToleranceMs = Math.round(input.audio.avgPauseDuration * 1000);
+    }
+
+    // Refine pacing cuts-per-minute from speech ratio when no pacing data exists
+    if (!input.pacing && input.audio.speechRatio > 0) {
+      params.pacing.cutsPerMinute = input.audio.speechRatio > 0.85
+        ? 8  // dense speech → more cuts to keep it punchy
+        : input.audio.speechRatio < 0.6
+          ? 3  // lots of breathing room → fewer cuts
+          : 5;
+    }
   }
 
   return params;
