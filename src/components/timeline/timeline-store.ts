@@ -10,6 +10,15 @@ export interface CutPoint {
   end_s: number;
 }
 
+export interface CaptionStyle {
+  enabled: boolean;
+  position: "top" | "center" | "bottom";
+  fontSize: "small" | "medium" | "large";
+  color: string;           // hex color
+  background: "none" | "dark-bar" | "pill" | "full-width";
+  casing: "upper" | "lower" | "title" | "sentence";
+}
+
 export interface SegmentEffects {
   colorProfile: string;
   vignette: boolean;
@@ -19,6 +28,7 @@ export interface SegmentEffects {
   speedRamp: boolean;
   speedFactor: number;
   transitionType: string;
+  captions: CaptionStyle;
 }
 
 export interface Segment {
@@ -80,6 +90,15 @@ export interface TimelineState {
   snapCutsToBeats: () => void;
 }
 
+const DEFAULT_CAPTIONS: CaptionStyle = {
+  enabled: true,
+  position: "bottom",
+  fontSize: "medium",
+  color: "#FFFFFF",
+  background: "dark-bar",
+  casing: "sentence",
+};
+
 const DEFAULT_EFFECTS: SegmentEffects = {
   colorProfile: "neutral",
   vignette: true,
@@ -89,6 +108,7 @@ const DEFAULT_EFFECTS: SegmentEffects = {
   speedRamp: false,
   speedFactor: 1.0,
   transitionType: "crossfade",
+  captions: { ...DEFAULT_CAPTIONS },
 };
 
 let segmentCounter = 0;
@@ -188,12 +208,21 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
 
   updateEffects: (effects) =>
     set((state) => {
-      const newEffects = { ...state.effects, ...effects };
+      // Deep merge captions if present
+      const mergedEffects = { ...state.effects, ...effects };
+      if (effects.captions && state.effects.captions) {
+        mergedEffects.captions = { ...state.effects.captions, ...effects.captions };
+      }
       // Also update the selected segment's effects
-      const segments = state.segments.map((s) =>
-        s.id === state.selectedSegmentId ? { ...s, effects: { ...s.effects, ...effects } } : s
-      );
-      return { effects: newEffects, segments, isModified: true };
+      const segments = state.segments.map((s) => {
+        if (s.id !== state.selectedSegmentId) return s;
+        const segEffects = { ...s.effects, ...effects };
+        if (effects.captions && s.effects.captions) {
+          segEffects.captions = { ...s.effects.captions, ...effects.captions };
+        }
+        return { ...s, effects: segEffects };
+      });
+      return { effects: mergedEffects, segments, isModified: true };
     }),
 
   setSelectedSegment: (index) => set((state) => {

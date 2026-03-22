@@ -206,6 +206,102 @@ export function EffectPanel({ visible }: EffectPanelProps) {
             })}
           </div>
         </div>
+        {/* Captions / Subtitles */}
+        <div style={{ height: "1px", background: "#1f1f1f" }} />
+
+        <div className="space-y-2">
+          <label className="text-xs uppercase tracking-wider block" style={{ color: "#555", fontFamily: "system-ui" }}>
+            Captions
+          </label>
+
+          {/* Enable/disable */}
+          <CompactToggle
+            label="Show Captions"
+            active={selectedSegment?.effects.captions?.enabled !== false}
+            onToggle={() => {
+              const current = selectedSegment?.effects.captions?.enabled !== false;
+              updateEffects({ captions: { ...selectedSegment?.effects.captions!, enabled: !current } } as any);
+            }}
+          />
+
+          {/* Position */}
+          <div className="flex gap-1">
+            {(["top", "center", "bottom"] as const).map((pos) => (
+              <button
+                key={pos}
+                onClick={() => updateEffects({ captions: { ...selectedSegment?.effects.captions!, position: pos } } as any)}
+                style={{
+                  flex: 1,
+                  padding: "4px",
+                  fontSize: "9px",
+                  fontFamily: "'JetBrains Mono', monospace",
+                  background: selectedSegment?.effects.captions?.position === pos ? "rgba(232,98,14,0.15)" : "rgba(255,255,255,0.03)",
+                  border: selectedSegment?.effects.captions?.position === pos ? "1px solid rgba(232,98,14,0.5)" : "1px solid #1f1f1f",
+                  color: selectedSegment?.effects.captions?.position === pos ? "#E8620E" : "#666",
+                  borderRadius: "3px",
+                  cursor: "pointer",
+                  transition: "all 150ms",
+                  textTransform: "capitalize",
+                }}
+              >
+                {pos}
+              </button>
+            ))}
+          </div>
+
+          {/* Size */}
+          <div className="flex gap-1">
+            {(["small", "medium", "large"] as const).map((sz) => (
+              <button
+                key={sz}
+                onClick={() => updateEffects({ captions: { ...selectedSegment?.effects.captions!, fontSize: sz } } as any)}
+                style={{
+                  flex: 1,
+                  padding: "4px",
+                  fontSize: "9px",
+                  fontFamily: "'JetBrains Mono', monospace",
+                  background: selectedSegment?.effects.captions?.fontSize === sz ? "rgba(232,98,14,0.15)" : "rgba(255,255,255,0.03)",
+                  border: selectedSegment?.effects.captions?.fontSize === sz ? "1px solid rgba(232,98,14,0.5)" : "1px solid #1f1f1f",
+                  color: selectedSegment?.effects.captions?.fontSize === sz ? "#E8620E" : "#666",
+                  borderRadius: "3px",
+                  cursor: "pointer",
+                  transition: "all 150ms",
+                  textTransform: "capitalize",
+                }}
+              >
+                {sz}
+              </button>
+            ))}
+          </div>
+
+          {/* Background style */}
+          <div className="flex gap-1">
+            {([
+              { id: "dark-bar", label: "Bar" },
+              { id: "pill", label: "Pill" },
+              { id: "none", label: "None" },
+            ] as const).map((bg) => (
+              <button
+                key={bg.id}
+                onClick={() => updateEffects({ captions: { ...selectedSegment?.effects.captions!, background: bg.id } } as any)}
+                style={{
+                  flex: 1,
+                  padding: "4px",
+                  fontSize: "9px",
+                  fontFamily: "'JetBrains Mono', monospace",
+                  background: selectedSegment?.effects.captions?.background === bg.id ? "rgba(232,98,14,0.15)" : "rgba(255,255,255,0.03)",
+                  border: selectedSegment?.effects.captions?.background === bg.id ? "1px solid rgba(232,98,14,0.5)" : "1px solid #1f1f1f",
+                  color: selectedSegment?.effects.captions?.background === bg.id ? "#E8620E" : "#666",
+                  borderRadius: "3px",
+                  cursor: "pointer",
+                  transition: "all 150ms",
+                }}
+              >
+                {bg.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -510,6 +510,40 @@ export function TimelineEditor({ clipId, videoSrc }: TimelineEditorProps) {
           </div>
         )}
 
+        {/* Caption position preview */}
+        {currentSegment?.effects.captions?.enabled !== false && (
+          <div
+            className="absolute left-0 right-0 pointer-events-none flex justify-center"
+            style={{
+              top: currentSegment?.effects.captions?.position === "top" ? "12px" : undefined,
+              bottom: currentSegment?.effects.captions?.position === "center" ? undefined : (currentSegment?.effects.captions?.position === "top" ? undefined : "12px"),
+              top2: currentSegment?.effects.captions?.position === "center" ? "50%" : undefined,
+              transform: currentSegment?.effects.captions?.position === "center" ? "translateY(-50%)" : undefined,
+              ...(currentSegment?.effects.captions?.position === "center" ? { top: "50%", transform: "translateY(-50%)" } : {}),
+              zIndex: 15,
+              transition: "all 0.3s ease",
+            }}
+          >
+            <span
+              style={{
+                fontSize: currentSegment?.effects.captions?.fontSize === "large" ? "20px" : currentSegment?.effects.captions?.fontSize === "small" ? "12px" : "16px",
+                fontWeight: 700,
+                color: currentSegment?.effects.captions?.color || "#FFFFFF",
+                textTransform: currentSegment?.effects.captions?.casing === "upper" ? "uppercase" : currentSegment?.effects.captions?.casing === "lower" ? "lowercase" : currentSegment?.effects.captions?.casing === "title" ? "capitalize" : undefined,
+                padding: "4px 16px",
+                borderRadius: currentSegment?.effects.captions?.background === "pill" ? "20px" : "4px",
+                background: currentSegment?.effects.captions?.background === "none" ? "transparent" : currentSegment?.effects.captions?.background === "full-width" ? "rgba(0,0,0,0.7)" : "rgba(0,0,0,0.6)",
+                textShadow: "0 1px 4px rgba(0,0,0,0.8)",
+                fontFamily: "system-ui",
+                letterSpacing: currentSegment?.effects.captions?.casing === "upper" ? "0.05em" : undefined,
+                transition: "all 0.3s ease",
+              }}
+            >
+              Sample caption text
+            </span>
+          </div>
+        )}
+
         {/* Click overlay */}
         <button
           onClick={togglePlay}
