@@ -4,6 +4,7 @@ import { analyzeVisualStyle } from "./visual-analyzer";
 import { analyzeVoice } from "./voice-analyzer";
 import { analyzePacing } from "./pacing-analyzer";
 import { analyzeAudio } from "./audio-analyzer";
+import { analyzeVideoStyle } from "./video-understanding";
 import { writeDnaSkill } from "./dna-writer";
 import { saveDnaSkill } from "@/lib/dna/loader";
 import { extractAudio } from "@/lib/ffmpeg/extract";
@@ -94,9 +95,22 @@ export async function onboardFromYouTube(
     audioAnalysis = undefined;
   }
 
-  onProgress?.("writing_dna", 88);
+  // Step 9: Video understanding via Nemotron VL (free, full video analysis)
+  onProgress?.("understanding_video", 85);
+  let videoUnderstanding;
+  const openrouterKey = process.env.OPENROUTER_API_KEY;
+  if (openrouterKey) {
+    try {
+      videoUnderstanding = await analyzeVideoStyle(videoPath, openrouterKey);
+      console.log(`[Onboarding] Video understanding: ${videoUnderstanding.editingStyle}`);
+    } catch (err) {
+      console.error("[Onboarding] Video understanding failed (non-critical):", err);
+    }
+  }
 
-  // Step 9: Write DNA skill (with per-window data)
+  onProgress?.("writing_dna", 90);
+
+  // Step 10: Write DNA skill (with all analysis data)
   const username = creatorName.toLowerCase().replace(/[^a-z0-9]/g, "-").slice(0, 30);
   const { skillContent } = await writeDnaSkill({
     username,
@@ -106,6 +120,7 @@ export async function onboardFromYouTube(
     pacing: pacingAnalysis,
     audio: audioAnalysis,
     windows: analyzedWindows,
+    videoUnderstanding,
   });
 
   onProgress?.("saving", 95);
@@ -181,9 +196,22 @@ export async function onboardFromUpload(
     audioAnalysis = undefined;
   }
 
-  onProgress?.("writing_dna", 90);
+  // Step 8: Video understanding via Nemotron VL (free)
+  onProgress?.("understanding_video", 87);
+  let videoUnderstanding;
+  const openrouterKey2 = process.env.OPENROUTER_API_KEY;
+  if (openrouterKey2) {
+    try {
+      videoUnderstanding = await analyzeVideoStyle(videoPath, openrouterKey2);
+      console.log(`[Onboarding] Video understanding: ${videoUnderstanding.editingStyle}`);
+    } catch (err) {
+      console.error("[Onboarding] Video understanding failed (non-critical):", err);
+    }
+  }
 
-  // Step 8: Write DNA skill (now with per-window data)
+  onProgress?.("writing_dna", 92);
+
+  // Step 9: Write DNA skill (with all analysis data)
   const username = creatorName.toLowerCase().replace(/[^a-z0-9]/g, "-").slice(0, 30);
   const { skillContent } = await writeDnaSkill({
     username,
@@ -193,11 +221,12 @@ export async function onboardFromUpload(
     pacing: pacingAnalysis,
     audio: audioAnalysis,
     windows: analyzedWindows,
+    videoUnderstanding,
   });
 
-  onProgress?.("saving", 95);
+  onProgress?.("saving", 96);
 
-  // Step 9: Save to Supabase
+  // Step 10: Save to Supabase
   const profileId = await saveDnaSkill(userId, creatorName, skillContent, "upload");
 
   // Cleanup

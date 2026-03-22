@@ -7,6 +7,7 @@ import type { VoiceAnalysis } from "./voice-analyzer";
 import type { PacingAnalysis } from "./pacing-analyzer";
 import type { AudioAnalysis } from "./audio-analyzer";
 import type { FrameWindow } from "./frame-sampler";
+import type { VideoUnderstandingResult } from "./video-understanding";
 
 const anthropic = new Anthropic();
 
@@ -18,6 +19,7 @@ interface DnaWriterInput {
   pacing?: PacingAnalysis;
   audio?: AudioAnalysis;
   windows?: FrameWindow[];
+  videoUnderstanding?: VideoUnderstandingResult;
 }
 
 /**
@@ -217,6 +219,24 @@ ${input.visual.captionStyle.detected ? `  - Casing: ${input.visual.captionStyle.
 - Avg scene changes per window: ${windowStats.avgSceneChangesPerWindow.toFixed(1)}
 - Estimated B-roll %: ${windowStats.brollPercentage.toFixed(0)}% (windows without detected faces)
 - Pacing category: ${windowStats.pacingCategory}`);
+  }
+
+  if (input.videoUnderstanding) {
+    const vu = input.videoUnderstanding;
+    parts.push(`## Video Understanding (Nemotron VL — full video analysis)
+THIS IS THE MOST IMPORTANT ANALYSIS — it comes from watching the actual video, not just static frames.
+- Editing style: ${vu.editingStyle}
+- Transitions detected: ${vu.transitionTypes.join(", ")}
+- Zoom behavior: ${vu.zoomBehavior}
+- Pacing: ${vu.pacingDescription}
+- Color grading: ${vu.colorGrading}
+- B-roll usage: ${vu.brollUsage}
+- Caption style: ${vu.captionStyle}
+- Unique patterns observed:
+${vu.uniquePatterns.map((p) => `  - ${p}`).join("\n")}
+
+Raw analysis:
+${vu.rawAnalysis.slice(0, 2000)}`);
   }
 
   if (parts.length === 0) {
