@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { clips, jobs } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { renderClip } from "@/lib/agents/render-agent-1";
-import { applyTransitionsBetweenSegments, getDefaultTransition } from "@/lib/agents/transition-engine";
+import { applyTransitionsBetweenSegments } from "@/lib/agents/transition-engine";
 import path from "path";
 import os from "os";
 import { promises as fs } from "fs";
@@ -90,7 +90,7 @@ export async function POST(
               }
             );
 
-            send({ step: "saving", pct: 80 });
+            send({ step: "saving", pct: 90 });
             await db.update(clips).set({ renderUrl: outputPath }).where(eq(clips.id, clipId));
             send({ step: "completed", pct: 100, renderUrl: outputPath });
           } else {

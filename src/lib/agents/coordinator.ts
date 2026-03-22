@@ -275,9 +275,12 @@ export async function runPipeline(
       // ── Skill 3: Finalize via FFmpeg (overlay animations + captions + B-roll) ──
       onProgress?.(`finalizing_clip_${i + 1}`, clipPctBase + 10);
 
-      // Generate captions
+      // Generate captions with DNA style
       const captions = generatePhraseCaptions(clipWords, {
         casing: extractDnaValue(dnaContent, "Casing:", "sentence") as any,
+        position: extractDnaValue(dnaContent, "Position:", "bottom") as any,
+        background: extractDnaValue(dnaContent, "Background:", "dark-bar") as any,
+        fontSize: extractDnaValue(dnaContent, "Font size:", "medium") as any,
         colorHex: extractDnaValue(dnaContent, "Color:", "#FFFFFF"),
       });
 
