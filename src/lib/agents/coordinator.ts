@@ -275,20 +275,26 @@ export async function runPipeline(
       // ── Skill 3: Finalize via FFmpeg (overlay animations + captions + B-roll) ──
       onProgress?.(`finalizing_clip_${i + 1}`, clipPctBase + 10);
 
-      // Generate captions with DNA style
-      const captions = generatePhraseCaptions(clipWords, {
+      // Generate captions as JSON data (rendered as HTML overlay in the editor,
+      // only burned into pixels on final export/download)
+      const captionConfig = {
         casing: extractDnaValue(dnaContent, "Casing:", "sentence") as any,
         position: extractDnaValue(dnaContent, "Position:", "bottom") as any,
         background: extractDnaValue(dnaContent, "Background:", "dark-bar") as any,
         fontSize: extractDnaValue(dnaContent, "Font size:", "medium") as any,
         colorHex: extractDnaValue(dnaContent, "Color:", "#FFFFFF"),
-      });
+      };
+      const captions = generatePhraseCaptions(clipWords, captionConfig);
 
-      let captionPath: string | null = null;
-      if (captions.length > 0) {
-        captionPath = path.join(workDir, `captions-${i}.ass`);
-        await writeCaptionFile(captions, captionPath);
-      }
+      // Store captions as JSON for the HTML overlay (not burned into video)
+      const captionData = captions.map((c) => ({
+        text: c.text,
+        start_s: c.start_s,
+        end_s: c.end_s,
+      }));
+
+      // Only burn captions on final export — skip ASS burn in the pipeline
+      const captionPath: string | null = null;
 
       // B-roll matching
       let brollInsertions: Awaited<ReturnType<typeof matchBroll>> = [];
@@ -354,6 +360,8 @@ export async function runPipeline(
             timestamp_s: m.timestamp_s, duration_s: m.duration_s,
             type: m.suggested_type, content: m.content,
           })),
+          captions: captionData,
+          captionStyle: captionConfig,
         },
       });
 

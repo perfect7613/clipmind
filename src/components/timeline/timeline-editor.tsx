@@ -5,6 +5,7 @@ import { ThumbnailStrip } from "./thumbnail-strip";
 import { WaveformTrack } from "./waveform-track";
 import { EffectPanel } from "./effect-panel";
 import { AiPromptBox } from "./ai-prompt-box";
+import { CaptionOverlay } from "./caption-overlay";
 import { useTimelineStore } from "./timeline-store";
 
 interface TimelineEditorProps {
@@ -119,6 +120,7 @@ const PULSE_KEYFRAMES = `
 
 export function TimelineEditor({ clipId, videoSrc }: TimelineEditorProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const videoContainerRef = useRef<HTMLDivElement>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
@@ -158,6 +160,8 @@ export function TimelineEditor({ clipId, videoSrc }: TimelineEditorProps) {
     loadBeats,
     toggleBeatsVisible,
     snapCutsToBeats,
+    captions,
+    updateEffects,
   } = useTimelineStore();
 
   // Load timeline data
@@ -443,7 +447,7 @@ export function TimelineEditor({ clipId, videoSrc }: TimelineEditorProps) {
       <style>{PULSE_KEYFRAMES}</style>
 
       {/* ── Video Player with real-time effect preview ──── */}
-      <div className="relative overflow-hidden" style={{ background: "#000" }}>
+      <div ref={videoContainerRef} className="relative overflow-hidden" style={{ background: "#000" }}>
         <video
           ref={videoRef}
           src={videoSrc}
@@ -510,19 +514,15 @@ export function TimelineEditor({ clipId, videoSrc }: TimelineEditorProps) {
           </div>
         )}
 
-        {/* Caption position indicator — shows where captions will render on export */}
-        {currentSegment?.effects.captions && currentSegment.effects.captions.enabled !== false && currentSegment.effects.captions.position !== "bottom" && (
-          <div
-            className="absolute left-0 right-0 pointer-events-none flex justify-center"
-            style={{
-              ...(currentSegment.effects.captions.position === "top" ? { top: "8px" } : { top: "50%", transform: "translateY(-50%)" }),
-              zIndex: 15,
-            }}
-          >
-            <span style={{ fontSize: "9px", color: "#888", background: "rgba(0,0,0,0.5)", padding: "2px 8px", borderRadius: "3px", fontFamily: "'JetBrains Mono', monospace" }}>
-              captions: {currentSegment.effects.captions.position}
-            </span>
-          </div>
+        {/* Real-time draggable caption overlay */}
+        {captions.length > 0 && currentSegment && (
+          <CaptionOverlay
+            captions={captions}
+            currentTime={currentTime}
+            style={currentSegment.effects.captions || { enabled: true, position: "bottom", fontSize: "medium", color: "#FFFFFF", background: "dark-bar", casing: "sentence" }}
+            onStyleChange={(changes) => updateEffects({ captions: { ...currentSegment.effects.captions, ...changes } as any })}
+            containerRef={videoContainerRef}
+          />
         )}
 
         {/* Click overlay */}

@@ -64,6 +64,7 @@ export interface TimelineState {
   beatMarkers: BeatMarker[];
   beatsVisible: boolean;
   beatsLoading: boolean;
+  captions: Array<{ text: string; start_s: number; end_s: number }>;
 
   // Actions
   loadTimeline: (clipId: string, data: Record<string, unknown>) => void;
@@ -145,9 +146,11 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
   beatMarkers: [],
   beatsVisible: false,
   beatsLoading: false,
+  captions: [],
 
   loadTimeline: (clipId, data: Record<string, unknown>) => {
     const timeline = (data.timeline || {}) as Record<string, unknown>;
+    const captionData = (timeline.captions as Array<{ text: string; start_s: number; end_s: number }>) || [];
     const dur = (data.durationS as number) || 0;
     const cutPts = (timeline.cutPoints as CutPoint[]) || [{ start_s: 0, end_s: dur }];
 
@@ -177,6 +180,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
       segments,
       zoomEvents: (timeline.zoomEvents as TimelineState["zoomEvents"]) || [],
       speedRamps: (timeline.speedRamps as TimelineState["speedRamps"]) || [],
+      captions: captionData,
       isModified: false,
       selectedSegmentIndex: 0,
       selectedSegmentId: segments[0]?.id ?? null,
@@ -408,6 +412,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
       aiPromptVisible: false,
       beatMarkers: [],
       beatsVisible: false,
+      captions: [],
       beatsLoading: false,
     }),
 
